@@ -1,6 +1,7 @@
 node_modules/
 dist/
 *.log
+AGENTS.md
 
 # Electron runtime data is local to each Windows user.
 widget-position.json
