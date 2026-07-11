@@ -1,71 +1,82 @@
 <div align="center">
 
+<img src="limit.png" width="72" alt="Codex Usage Tray icon">
+
 # Codex Usage Tray
 
 **Windows taskbar widget for your Codex usage limits**
 
-Compact. Local. Always within reach.
+`Windows` `Electron` `Codex CLI`
+
+Compact, local, and always within reach.
 
 </div>
 
 ---
 
-Codex Usage Tray places your remaining **5-hour** and **weekly** Codex allowance immediately above the Windows taskbar. It stays out of the way, remembers its position, and refreshes automatically every minute.
+> Keep your Codex allowance in view without opening a browser or digging through settings.
 
-| What it shows | How it works |
+Codex Usage Tray places your remaining **5-hour** and **weekly** allowance immediately above the Windows taskbar. It remembers where you place it and refreshes automatically every minute.
+
+| In the widget | In the background |
 | --- | --- |
 | Remaining 5-hour allowance | Refreshes every 60 seconds |
-| Remaining weekly allowance | Shows the reset time for each limit |
+| Remaining weekly allowance | Shows each reset time |
 | Current Codex CLI account | Uses the official local Codex integration |
 
-## Highlights
+## Why It Fits
 
-- Taskbar-adjacent, frameless widget that can be dragged horizontally
-- Windows tray menu for refresh, visibility, usage dashboard, and quit actions
-- Built-in `Auth login` action when Codex is not signed in
-- Automatically installs the official Codex CLI if it is missing
-- Starts silently through `start-widget.vbs`
-- Stores only the widget position on the local machine
+| | |
+| --- | --- |
+| **Taskbar-native** | A frameless widget stays flush with the Windows taskbar and can be dragged horizontally. |
+| **Low friction** | The tray menu provides refresh, visibility, usage dashboard, and quit actions. |
+| **Own your sign-in** | When needed, `Auth login` opens Codex's own authentication flow. |
+| **Local by design** | The app uses the official local Codex app-server and stores only widget placement. |
 
-## Quick Start
+## Get Started
 
-### 1. Install prerequisites
+### Option A: Install from a terminal
 
-- Windows
-- [Node.js](https://nodejs.org/)
-
-### 2. Install and run
+**Requirements:** Windows and [Node.js](https://nodejs.org/)
 
 ```powershell
 npm install
 npm start
 ```
 
+### Option B: Start by double-clicking
+
+Share the complete project folder with someone who has Node.js installed, then double-click `start-widget.vbs`.
+
+| First run | Later runs |
+| --- | --- |
+| Opens a command window and runs `npm install` | Starts the widget silently |
+
 The widget appears just above the taskbar. Right-click it to access its menu.
 
-## Sign In
+## Connect Codex
 
-If the Codex CLI is not authenticated, right-click the widget and select **Auth login**. This opens Codex's own `codex login` flow. Complete sign-in there, then restart the widget if the limits do not appear immediately.
+If the Codex CLI is not authenticated, right-click the widget and select **Auth login**. Codex opens its own `codex login` flow; this application never asks for credentials.
 
-The application installs the official CLI with the following command when necessary:
+If the CLI is missing, the widget installs the official package automatically:
 
 ```powershell
 npm install -g @openai/codex
 ```
 
-## Run at Windows Sign-In
+## Start With Windows
 
-`start-widget.vbs` starts the widget without leaving a terminal window open.
+After its initial dependency installation, `start-widget.vbs` launches without leaving a terminal window open.
 
-To launch it when you sign in, create a Windows Run entry that points to the full path of `start-widget.vbs`, or place a shortcut to this file in the Startup folder:
+To run it when you sign in, either add a Windows Run entry pointing to its full path or place a shortcut in the Startup folder:
 
 ```text
 shell:startup
 ```
 
-## Privacy and Data
+## Privacy
 
-Usage data is read only from the official local `codex app-server` method:
+Usage data is read only through the official local Codex app-server:
 
 ```text
 account/rateLimits/read
@@ -77,27 +88,27 @@ The widget does **not** read:
 - Browser cookies
 - ChatGPT web endpoints
 
-Codex owns the authentication process. The widget never collects credentials.
+Codex owns authentication. The widget never collects credentials.
 
 ## Configuration
 
-Most installations need no configuration. If Codex is installed in a non-standard location, point `CODEX_BINARY` to `codex.exe` before starting the widget:
+Most installations need no configuration. If Codex lives outside the standard location, set `CODEX_BINARY` to its executable before launching the widget:
 
 ```powershell
 $env:CODEX_BINARY = "C:\path\to\codex.exe"
 npm start
 ```
 
-## Development
+## For Contributors
 
 ```powershell
 # Syntax-check the Electron main process
 npm run check
 ```
 
-| Path | Purpose |
+| Path | Responsibility |
 | --- | --- |
 | `src/main.cjs` | Electron lifecycle, tray, widget placement, and Codex client |
 | `src/widget.html` | Compact widget interface |
 | `src/widget-preload.cjs` | Safe IPC bridge for the renderer |
-| `start-widget.vbs` | Hidden Windows launcher |
+| `start-widget.vbs` | Windows launcher with first-run dependency setup |
