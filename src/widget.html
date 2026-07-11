@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Codex Usage</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+      }
+      body {
+        margin: 0;
+        background: #1c242e;
+        color: #e7edf5;
+        font-family: "Segoe UI", sans-serif;
+        user-select: none;
+      }
+      main {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        height: 42px;
+        padding: 4px 14px;
+        cursor: grab;
+      }
+      .metric {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        flex: 1;
+        min-width: 0;
+        white-space: nowrap;
+      }
+      .label {
+        color: #9ca9bb;
+        font-size: 10px;
+        letter-spacing: .02em;
+        line-height: 12px;
+      }
+      .value {
+        display: block;
+        color: #2dd4a2;
+        font-size: 20px;
+        font-weight: 600;
+        line-height: 20px;
+      }
+      .divider { width: 1px; height: 22px; background: #303a49; }
+      .reset { color: #a8b5c6; font-size: 11px; font-weight: 500; letter-spacing: 0; }
+      main:active { cursor: grabbing; }
+      ::-webkit-scrollbar { display: none; }
+    </style>
+  </head>
+  <body>
+    <main id="usage" title="Codex usage limits">
+      <div class="metric"><span class="label">5 HOUR</span><strong class="value" id="five-hour">--</strong><span class="reset" id="five-hour-reset"></span></div>
+      <span class="divider"></span>
+      <div class="metric"><span class="label">WEEK</span><strong class="value" id="weekly">--</strong><span class="reset" id="weekly-reset"></span></div>
+    </main>
+    <script>
+      window.codexUsage.onUpdate((usage) => {
+        document.querySelector("#five-hour").textContent = usage.fiveHour
+        document.querySelector("#five-hour-reset").textContent = usage.fiveHourReset ? usage.fiveHourReset : ""
+        document.querySelector("#weekly").textContent = usage.weekly
+        document.querySelector("#weekly-reset").textContent = usage.weeklyReset ? usage.weeklyReset : ""
+        document.querySelector("#usage").title = usage.status || "Codex usage limits"
+      })
+      document.addEventListener("contextmenu", (event) => {
+        event.preventDefault()
+        window.codexUsage.showContextMenu()
+      })
+      document.addEventListener("pointerdown", (event) => {
+        if (event.button !== 0) return
+        document.querySelector("#usage").setPointerCapture(event.pointerId)
+        window.codexUsage.startDrag(event.screenX)
+      })
+      document.addEventListener("pointermove", (event) => {
+        if ((event.buttons & 1) === 0) return
+        window.codexUsage.moveDrag(event.screenX)
+      })
+      document.addEventListener("pointerup", () => window.codexUsage.endDrag())
+      document.addEventListener("pointercancel", () => window.codexUsage.endDrag())
+    </script>
+  </body>
+</html>

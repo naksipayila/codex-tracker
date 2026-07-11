@@ -1,0 +1,7 @@
+node_modules/
+dist/
+*.log
+
+# Electron runtime data is local to each Windows user.
+widget-position.json
+user-data/
