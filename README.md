@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="src/limit.png" width="72" alt="Codex Usage Tray icon">
+<img src="https://github.com/naksipayila/codex-tracker/raw/refs/heads/main/src/limit.png" width="72" alt="Codex Usage Tray icon">
 
 # Codex Usage Tray
 
