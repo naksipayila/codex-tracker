@@ -20,7 +20,7 @@ let widgetHiddenByUser = false
 let widgetDragStart
 
 function createTrayIcon() {
-  const customIcon = nativeImage.createFromPath(path.join(__dirname, "limit.png"))
+  const customIcon = nativeImage.createFromPath(path.join(__dirname, "icon.png"))
   if (!customIcon.isEmpty()) {
     const { width, height } = customIcon.getSize()
     const side = Math.floor(Math.min(width * 0.84, height * 0.98))

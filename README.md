@@ -130,5 +130,5 @@ npm run check
 | `src/main.cjs` | Electron lifecycle, taskbar placement, tray and menus, Codex client, CLI discovery, installation, and login |
 | `src/widget.html` | 320 x 42 taskbar widget interface and drag interaction |
 | `src/widget-preload.cjs` | Restricted renderer IPC bridge |
-| `src/limit.png` | Tray icon source |
+| `src/icon.png` | Tray icon source |
 | `start-widget.vbs` | Windows launcher with visible first-run dependency setup |
