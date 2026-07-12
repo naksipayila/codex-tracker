@@ -5,6 +5,9 @@ const path = require("node:path")
 
 const REFRESH_INTERVAL_MS = 60_000
 const USAGE_URL = "https://chatgpt.com/codex/settings/usage"
+const STARTUP_REGISTRY_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
+const STARTUP_VALUE_NAME = "CodexUsageTray"
+const STARTUP_SHORTCUT_NAME = "Codex Usage Tray.lnk"
 
 let tray
 let client
@@ -130,6 +133,86 @@ function installCodexCli() {
       } else {
         reject(new Error(`Codex installation failed (${code ?? "unknown"}).`))
       }
+    })
+  })
+}
+
+function getLegacyStartupShortcutPath() {
+  return path.join(
+    app.getPath("appData"),
+    "Microsoft",
+    "Windows",
+    "Start Menu",
+    "Programs",
+    "Startup",
+    STARTUP_SHORTCUT_NAME,
+  )
+}
+
+function getRegistryExecutable() {
+  return path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "reg.exe")
+}
+
+function isWindowsStartupEnabled() {
+  return new Promise((resolve) => {
+    const registry = spawn(getRegistryExecutable(), [
+      "query",
+      STARTUP_REGISTRY_KEY,
+      "/v",
+      STARTUP_VALUE_NAME,
+    ], {
+      windowsHide: true,
+      stdio: "ignore",
+    })
+
+    registry.on("error", () => resolve(false))
+    registry.on("exit", (code) => resolve(code === 0))
+  })
+}
+
+function removeLegacyStartupShortcut() {
+  try {
+    fs.unlinkSync(getLegacyStartupShortcutPath())
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error
+  }
+}
+
+function setWindowsStartupEnabled(enabled) {
+  if (!enabled) removeLegacyStartupShortcut()
+
+  return new Promise((resolve, reject) => {
+    const launcher = path.join(__dirname, "..", "start-widget.exe")
+    const args = enabled
+      ? [
+          "add",
+          STARTUP_REGISTRY_KEY,
+          "/v",
+          STARTUP_VALUE_NAME,
+          "/t",
+          "REG_SZ",
+          "/d",
+          `"${launcher}"`,
+          "/f",
+        ]
+      : ["delete", STARTUP_REGISTRY_KEY, "/v", STARTUP_VALUE_NAME, "/f"]
+    const registry = spawn(getRegistryExecutable(), args, {
+      windowsHide: true,
+      stdio: "ignore",
+    })
+
+    registry.on("error", reject)
+    registry.on("exit", (code) => {
+      if (code !== 0) {
+        if (!enabled) {
+          resolve()
+          return
+        }
+        reject(new Error(`Registry update failed (${code ?? "unknown"}).`))
+        return
+      }
+      if (enabled) removeLegacyStartupShortcut()
+      resolve()
     })
   })
 }
@@ -511,11 +594,31 @@ app.whenReady().then(async () => {
   ipcMain.on("widget:context-menu", async () => {
     if (!widget || widget.isDestroyed()) return
 
-    const loggedIn = await isCodexLoggedIn()
+    const [loggedIn, startupEnabled] = await Promise.all([
+      isCodexLoggedIn(),
+      isWindowsStartupEnabled(),
+    ])
     const menuItems = [
       ...(!loggedIn
         ? [{ label: "Auth login", click: startCliLogin }, { type: "separator" }]
         : []),
+      {
+        label: "Add to Windows startup",
+        type: "checkbox",
+        checked: startupEnabled,
+        click: async () => {
+          try {
+            await setWindowsStartupEnabled(!startupEnabled)
+            lastError = startupEnabled
+              ? "Removed from Windows startup."
+              : "Added to Windows startup."
+          } catch (error) {
+            lastError = `Could not update Windows startup: ${error.message}`
+          }
+          updateTray()
+        },
+      },
+      { type: "separator" },
       {
         label: "Hide widget",
         click: () => {
