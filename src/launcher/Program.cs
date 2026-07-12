@@ -3,7 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
-using System.Threading;
+using System.Text;
 using System.Windows.Forms;
 
 [assembly: AssemblyTitle("Codex Usage Tray")]
@@ -58,21 +58,123 @@ internal static class Program
         int parentProcessId;
         if (!long.TryParse(windowHandleText, out windowHandleValue) || !int.TryParse(parentProcessIdText, out parentProcessId)) return;
 
-        var windowHandle = new IntPtr(windowHandleValue);
-        while (IsWindow(windowHandle))
+        pinnedWindow = new IntPtr(windowHandleValue);
+        pinnedParentProcessId = parentProcessId;
+        winEventCallback = HandleWinEvent;
+        foregroundHook = SetWinEventHook(
+            EventSystemForeground,
+            EventSystemForeground,
+            IntPtr.Zero,
+            winEventCallback,
+            0,
+            0,
+            WinEventOutOfContext | WinEventSkipOwnProcess
+        );
+        objectHook = SetWinEventHook(
+            EventObjectCreate,
+            EventObjectReorder,
+            IntPtr.Zero,
+            winEventCallback,
+            0,
+            0,
+            WinEventOutOfContext | WinEventSkipOwnProcess
+        );
+
+        var fallbackTimer = new System.Windows.Forms.Timer { Interval = 250 };
+        fallbackTimer.Tick += delegate
         {
-            try
+            if (!IsWindow(pinnedWindow) || !IsParentProcessRunning())
             {
-                Process.GetProcessById(parentProcessId);
-            }
-            catch
-            {
+                fallbackTimer.Stop();
+                Application.ExitThread();
                 return;
             }
+            RaisePinnedWindow();
+        };
 
-            // Electron owns placement; this helper only keeps its transparent HWND above the taskbar.
-            SetWindowPos(windowHandle, HwndTopmost, 0, 0, 0, 0, SwpNoMove | SwpNoSize | SwpNoActivate);
-            Thread.Sleep(75);
+        try
+        {
+            RaisePinnedWindow();
+            fallbackTimer.Start();
+            Application.Run();
+        }
+        finally
+        {
+            fallbackTimer.Dispose();
+            if (foregroundHook != IntPtr.Zero) UnhookWinEvent(foregroundHook);
+            if (objectHook != IntPtr.Zero) UnhookWinEvent(objectHook);
+        }
+    }
+
+    private static bool IsParentProcessRunning()
+    {
+        try
+        {
+            using (var process = Process.GetProcessById(pinnedParentProcessId))
+            {
+                return !process.HasExited;
+            }
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void HandleWinEvent(
+        IntPtr hook,
+        uint eventType,
+        IntPtr windowHandle,
+        int objectId,
+        int childId,
+        uint eventThread,
+        uint eventTime
+    )
+    {
+        try
+        {
+            if (eventType == EventSystemForeground ||
+                eventType == EventObjectReorder ||
+                (objectId == ObjectIdWindow && eventType == EventObjectShow) ||
+                IsTaskbarWindow(windowHandle))
+            {
+                RaisePinnedWindow();
+            }
+        }
+        catch
+        {
+            // The fallback timer will retry if a transient shell event cannot be handled.
+        }
+    }
+
+    private static bool IsTaskbarWindow(IntPtr windowHandle)
+    {
+        if (windowHandle == IntPtr.Zero) return false;
+        var className = new StringBuilder(64);
+        if (GetClassName(windowHandle, className, className.Capacity) == 0) return false;
+        return className.ToString() == "Shell_TrayWnd" || className.ToString() == "Shell_SecondaryTrayWnd";
+    }
+
+    private static void RaisePinnedWindow()
+    {
+        if (raisingPinnedWindow || !IsWindow(pinnedWindow)) return;
+        raisingPinnedWindow = true;
+        try
+        {
+            // Keep the widget at the top of the topmost band without taking focus.
+            SetWindowPos(
+                pinnedWindow,
+                HwndTopmost,
+                0,
+                0,
+                0,
+                0,
+                SwpNoMove | SwpNoSize | SwpNoActivate | SwpNoOwnerZOrder | SwpNoSendChanging
+            );
+        }
+        finally
+        {
+            raisingPinnedWindow = false;
         }
     }
 
@@ -106,13 +208,56 @@ internal static class Program
     }
 
     private static readonly IntPtr HwndTopmost = new IntPtr(-1);
+    private static IntPtr pinnedWindow;
+    private static int pinnedParentProcessId;
+    private static bool raisingPinnedWindow;
+    private static WinEventDelegate winEventCallback;
+    private static IntPtr foregroundHook;
+    private static IntPtr objectHook;
+
+    private const uint EventSystemForeground = 0x0003;
+    private const uint EventObjectCreate = 0x8000;
+    private const uint EventObjectShow = 0x8002;
+    private const uint EventObjectReorder = 0x8004;
+    private const int ObjectIdWindow = 0;
+    private const uint WinEventOutOfContext = 0x0000;
+    private const uint WinEventSkipOwnProcess = 0x0002;
     private const uint SwpNoSize = 0x0001;
     private const uint SwpNoMove = 0x0002;
     private const uint SwpNoActivate = 0x0010;
+    private const uint SwpNoOwnerZOrder = 0x0200;
+    private const uint SwpNoSendChanging = 0x0400;
+
+    private delegate void WinEventDelegate(
+        IntPtr hook,
+        uint eventType,
+        IntPtr windowHandle,
+        int objectId,
+        int childId,
+        uint eventThread,
+        uint eventTime
+    );
 
     [DllImport("user32.dll")]
     private static extern bool IsWindow(IntPtr hWnd);
 
     [DllImport("user32.dll")]
     private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetWinEventHook(
+        uint eventMin,
+        uint eventMax,
+        IntPtr eventHookModule,
+        WinEventDelegate eventHook,
+        uint processId,
+        uint threadId,
+        uint flags
+    );
+
+    [DllImport("user32.dll")]
+    private static extern bool UnhookWinEvent(IntPtr eventHook);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(IntPtr hWnd, StringBuilder className, int maxCount);
 }

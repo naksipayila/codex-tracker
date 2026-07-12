@@ -26,6 +26,8 @@ let widgetHiddenByUser = false
 let widgetDragStart
 let widgetResizeAnimation
 let zOrderKeeper
+let zOrderRestartTimer
+let quitting = false
 
 function createTrayIcon() {
   const customIcon = nativeImage.createFromPath(path.join(__dirname, "icon.png"))
@@ -509,21 +511,25 @@ function raiseWidget() {
 
 function pinWidgetAboveTaskbar() {
   const launcher = path.join(__dirname, "..", "start-widget.exe")
-  if (!widget || widget.isDestroyed() || !fs.existsSync(launcher)) return
+  if (quitting || zOrderKeeper || !widget || widget.isDestroyed() || !fs.existsSync(launcher)) return
 
   const handle = widget.getNativeWindowHandle()
   const windowHandle = handle.length === 8 ? handle.readBigUInt64LE().toString() : handle.readUInt32LE().toString()
-  zOrderKeeper = spawn(launcher, ["--pin-hwnd", windowHandle, "--parent-pid", String(process.pid)], {
+  const keeper = spawn(launcher, ["--pin-hwnd", windowHandle, "--parent-pid", String(process.pid)], {
     windowsHide: true,
     stdio: "ignore",
   })
-  zOrderKeeper.on("error", () => {
+  zOrderKeeper = keeper
+  const restartKeeper = () => {
+    if (zOrderKeeper !== keeper) return
     zOrderKeeper = null
-  })
-  zOrderKeeper.on("exit", () => {
-    zOrderKeeper = null
-  })
-  zOrderKeeper.unref()
+    if (quitting || !widget || widget.isDestroyed()) return
+    clearTimeout(zOrderRestartTimer)
+    zOrderRestartTimer = setTimeout(pinWidgetAboveTaskbar, 1000)
+  }
+  keeper.once("error", restartKeeper)
+  keeper.once("exit", restartKeeper)
+  keeper.unref()
 }
 
 function createWidget() {
@@ -754,8 +760,10 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", (event) => event.preventDefault())
 app.on("before-quit", () => {
+  quitting = true
   clearInterval(refreshTimer)
   clearInterval(loginPoll)
+  clearTimeout(zOrderRestartTimer)
   client?.stop()
   loginProcess?.kill()
   zOrderKeeper?.kill()
