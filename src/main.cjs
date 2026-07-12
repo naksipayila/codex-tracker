@@ -25,7 +25,7 @@ let widgetPosition
 let snappingWidget = false
 let widgetHiddenByUser = false
 let widgetDragStart
-let widgetResizeAnimation
+let widgetResizeTimer
 let zOrderKeeper
 let zOrderRestartTimer
 let quitting = false
@@ -335,6 +335,7 @@ function updateTray() {
         positionWidget()
         widget?.show()
         raiseWidget()
+        restartWidgetPinning()
       },
     },
     { label: "Open Codex usage dashboard", click: () => shell.openExternal(USAGE_URL) },
@@ -376,6 +377,15 @@ function saveWidgetCollapsed(collapsed) {
   writeWidgetPosition()
 }
 
+function hidesInFullscreenApps() {
+  return widgetPosition?.hideInFullscreen !== false
+}
+
+function saveWidgetHideInFullscreen(hideInFullscreen) {
+  widgetPosition = { ...widgetPosition, hideInFullscreen }
+  writeWidgetPosition()
+}
+
 function getTaskbarLayout(display) {
   const { bounds, workArea } = display
   if (workArea.height < bounds.height) {
@@ -397,51 +407,35 @@ function shouldAnimateWidget() {
   }
 }
 
-function animateWidgetWidth(targetWidth) {
+function resizeWidgetWidth(targetWidth, delay = 0) {
   if (!widget || widget.isDestroyed()) return
 
-  if (widgetResizeAnimation) clearTimeout(widgetResizeAnimation.timer)
-
-  const startBounds = widget.getBounds()
-  const display = screen.getDisplayMatching(startBounds)
-  const right = Math.max(
-    display.bounds.x + targetWidth,
-    Math.min(display.bounds.x + display.bounds.width, startBounds.x + startBounds.width),
-  )
-  const targetBounds = { ...startBounds, x: right - targetWidth, width: targetWidth }
-  const animation = { timer: null }
-  widgetResizeAnimation = animation
-  snappingWidget = true
-  widget.setResizable(true)
-
-  const finish = () => {
-    if (widgetResizeAnimation !== animation || !widget || widget.isDestroyed()) return
+  clearTimeout(widgetResizeTimer)
+  const resize = () => {
+    if (!widget || widget.isDestroyed()) return
+    const startBounds = widget.getBounds()
+    const display = screen.getDisplayMatching(startBounds)
+    const right = Math.max(
+      display.bounds.x + targetWidth,
+      Math.min(display.bounds.x + display.bounds.width, startBounds.x + startBounds.width),
+    )
+    const targetBounds = { ...startBounds, x: right - targetWidth, width: targetWidth }
+    snappingWidget = true
+    widget.setResizable(true)
     widget.setBounds(targetBounds)
     widget.setResizable(false)
-    widgetResizeAnimation = null
     const updatedBounds = widget.getBounds()
     saveWidgetPosition(updatedBounds.x, display, updatedBounds.width)
     setTimeout(() => {
-      if (!widgetResizeAnimation) snappingWidget = false
+      snappingWidget = false
     }, 100)
   }
 
-  if (!shouldAnimateWidget() || startBounds.width === targetWidth) {
-    finish()
+  if (!delay) {
+    resize()
     return
   }
-
-  const startedAt = Date.now()
-  const frame = () => {
-    if (widgetResizeAnimation !== animation || !widget || widget.isDestroyed()) return
-    const progress = Math.min(1, (Date.now() - startedAt) / WIDGET_RESIZE_DURATION_MS)
-    const eased = 1 - Math.pow(1 - progress, 3)
-    const width = Math.round(startBounds.width + (targetWidth - startBounds.width) * eased)
-    widget.setBounds({ ...startBounds, x: right - width, width })
-    if (progress < 1) animation.timer = setTimeout(frame, 16)
-    else finish()
-  }
-  frame()
+  widgetResizeTimer = setTimeout(resize, delay)
 }
 
 function positionWidget(preferredX) {
@@ -493,7 +487,8 @@ function updateWidget() {
     const date = new Date(timestamp)
     const time = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`
     if (!includeDate) return time
-    return `${String(date.getDate()).padStart(2, "0")}.${String(date.getMonth() + 1).padStart(2, "0")} ${time}`
+    const dayMonth = date.toLocaleDateString("tr-TR", { day: "2-digit", month: "short" })
+    return `${dayMonth} ${time}`
   }
 
   widget.webContents.send("usage:update", {
@@ -519,7 +514,9 @@ function pinWidgetAboveTaskbar() {
 
   const handle = widget.getNativeWindowHandle()
   const windowHandle = handle.length === 8 ? handle.readBigUInt64LE().toString() : handle.readUInt32LE().toString()
-  const keeper = spawn(launcher, ["--pin-hwnd", windowHandle, "--parent-pid", String(process.pid)], {
+  const args = ["--pin-hwnd", windowHandle, "--parent-pid", String(process.pid)]
+  if (hidesInFullscreenApps()) args.push("--hide-in-fullscreen")
+  const keeper = spawn(launcher, args, {
     windowsHide: true,
     stdio: "ignore",
   })
@@ -534,6 +531,18 @@ function pinWidgetAboveTaskbar() {
   keeper.once("error", restartKeeper)
   keeper.once("exit", restartKeeper)
   keeper.unref()
+}
+
+function restartWidgetPinning() {
+  stopWidgetPinning()
+  pinWidgetAboveTaskbar()
+}
+
+function stopWidgetPinning() {
+  clearTimeout(zOrderRestartTimer)
+  const keeper = zOrderKeeper
+  zOrderKeeper = null
+  keeper?.kill()
 }
 
 function createWidget() {
@@ -689,12 +698,12 @@ app.whenReady().then(async () => {
     widgetDragStart = null
   })
   ipcMain.handle("widget:get-weekly-collapsed", () => Boolean(widgetPosition?.collapsed))
-  ipcMain.handle("widget:toggle-weekly", () => {
+  ipcMain.handle("widget:toggle-weekly", (_, collapsed, animate) => {
     if (!widget || widget.isDestroyed()) return false
-    const collapsed = !widgetPosition?.collapsed
+    if (typeof collapsed !== "boolean") collapsed = !widgetPosition?.collapsed
     const width = collapsed ? WIDGET_COLLAPSED_WIDTH : WIDGET_EXPANDED_WIDTH
     saveWidgetCollapsed(collapsed)
-    animateWidgetWidth(width)
+    resizeWidgetWidth(width, collapsed && animate ? WIDGET_RESIZE_DURATION_MS : 0)
     return collapsed
   })
   ipcMain.on("widget:context-menu", async () => {
@@ -724,12 +733,22 @@ app.whenReady().then(async () => {
           updateTray()
         },
       },
+      {
+        label: "Hide in fullscreen apps",
+        type: "checkbox",
+        checked: hidesInFullscreenApps(),
+        click: (item) => {
+          saveWidgetHideInFullscreen(item.checked)
+          restartWidgetPinning()
+        },
+      },
       { type: "separator" },
       {
         label: "Hide widget",
         click: () => {
           widgetHiddenByUser = true
           widget.hide()
+          stopWidgetPinning()
         },
       },
       { type: "separator" },

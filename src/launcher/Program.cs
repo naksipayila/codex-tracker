@@ -17,9 +17,9 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
-        if (args.Length == 4 && args[0] == "--pin-hwnd" && args[2] == "--parent-pid")
+        if (args.Length >= 4 && args[0] == "--pin-hwnd" && args[2] == "--parent-pid")
         {
-            PinWindow(args[1], args[3]);
+            PinWindow(args[1], args[3], Array.IndexOf(args, "--hide-in-fullscreen") >= 0);
             return;
         }
 
@@ -52,7 +52,7 @@ internal static class Program
         }
     }
 
-    private static void PinWindow(string windowHandleText, string parentProcessIdText)
+    private static void PinWindow(string windowHandleText, string parentProcessIdText, bool hideInFullscreen)
     {
         long windowHandleValue;
         int parentProcessId;
@@ -60,6 +60,7 @@ internal static class Program
 
         pinnedWindow = new IntPtr(windowHandleValue);
         pinnedParentProcessId = parentProcessId;
+        hideInFullscreenApps = hideInFullscreen;
         winEventCallback = HandleWinEvent;
         foregroundHook = SetWinEventHook(
             EventSystemForeground,
@@ -89,12 +90,12 @@ internal static class Program
                 Application.ExitThread();
                 return;
             }
-            RaisePinnedWindow();
+            UpdatePinnedWindow();
         };
 
         try
         {
-            RaisePinnedWindow();
+            UpdatePinnedWindow();
             fallbackTimer.Start();
             Application.Run();
         }
@@ -138,7 +139,7 @@ internal static class Program
                 (objectId == ObjectIdWindow && eventType == EventObjectShow) ||
                 IsTaskbarWindow(windowHandle))
             {
-                RaisePinnedWindow();
+                UpdatePinnedWindow();
             }
         }
         catch
@@ -152,7 +153,51 @@ internal static class Program
         if (windowHandle == IntPtr.Zero) return false;
         var className = new StringBuilder(64);
         if (GetClassName(windowHandle, className, className.Capacity) == 0) return false;
-        return className.ToString() == "Shell_TrayWnd" || className.ToString() == "Shell_SecondaryTrayWnd";
+        var windowClass = className.ToString();
+        return windowClass == "Shell_TrayWnd" || windowClass == "Shell_SecondaryTrayWnd" ||
+            windowClass == "Progman" || windowClass == "WorkerW";
+    }
+
+    private static void UpdatePinnedWindow()
+    {
+        if (hideInFullscreenApps && IsFullscreenForegroundWindow())
+        {
+            if (!widgetHiddenForFullscreen)
+            {
+                ShowWindow(pinnedWindow, SwHide);
+                widgetHiddenForFullscreen = true;
+            }
+            return;
+        }
+
+        if (widgetHiddenForFullscreen)
+        {
+            ShowWindow(pinnedWindow, SwShowNoActivate);
+            widgetHiddenForFullscreen = false;
+        }
+        RaisePinnedWindow();
+    }
+
+    private static bool IsFullscreenForegroundWindow()
+    {
+        var foregroundWindow = GetForegroundWindow();
+        if (foregroundWindow == IntPtr.Zero || foregroundWindow == pinnedWindow ||
+            !IsWindowVisible(foregroundWindow) || IsTaskbarWindow(foregroundWindow) || IsZoomed(foregroundWindow))
+        {
+            return false;
+        }
+
+        var monitor = MonitorFromWindow(foregroundWindow, MonitorDefaultToNearest);
+        if (monitor == IntPtr.Zero) return false;
+
+        var monitorInfo = new MonitorInfo();
+        monitorInfo.cbSize = Marshal.SizeOf(monitorInfo);
+        WindowRect windowRect;
+        return GetMonitorInfo(monitor, ref monitorInfo) && GetWindowRect(foregroundWindow, out windowRect) &&
+            windowRect.Left <= monitorInfo.rcMonitor.Left &&
+            windowRect.Top <= monitorInfo.rcMonitor.Top &&
+            windowRect.Right >= monitorInfo.rcMonitor.Right &&
+            windowRect.Bottom >= monitorInfo.rcMonitor.Bottom;
     }
 
     private static void RaisePinnedWindow()
@@ -211,6 +256,8 @@ internal static class Program
     private static IntPtr pinnedWindow;
     private static int pinnedParentProcessId;
     private static bool raisingPinnedWindow;
+    private static bool hideInFullscreenApps;
+    private static bool widgetHiddenForFullscreen;
     private static WinEventDelegate winEventCallback;
     private static IntPtr foregroundHook;
     private static IntPtr objectHook;
@@ -227,6 +274,9 @@ internal static class Program
     private const uint SwpNoActivate = 0x0010;
     private const uint SwpNoOwnerZOrder = 0x0200;
     private const uint SwpNoSendChanging = 0x0400;
+    private const uint MonitorDefaultToNearest = 0x00000002;
+    private const int SwHide = 0;
+    private const int SwShowNoActivate = 4;
 
     private delegate void WinEventDelegate(
         IntPtr hook,
@@ -242,7 +292,46 @@ internal static class Program
     private static extern bool IsWindow(IntPtr hWnd);
 
     [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool IsZoomed(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern bool GetWindowRect(IntPtr hWnd, out WindowRect lpRect);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint dwFlags);
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    private static extern bool GetMonitorInfo(IntPtr hMonitor, ref MonitorInfo lpmi);
+
+    [DllImport("user32.dll")]
+    private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+    [DllImport("user32.dll")]
     private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int x, int y, int cx, int cy, uint flags);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct WindowRect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    private struct MonitorInfo
+    {
+        public int cbSize;
+        public WindowRect rcMonitor;
+        public WindowRect rcWork;
+        public uint dwFlags;
+    }
 
     [DllImport("user32.dll")]
     private static extern IntPtr SetWinEventHook(
