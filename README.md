@@ -46,14 +46,14 @@ If the Codex CLI is missing, the app installs `@openai/codex` globally and then 
 ## Development
 
 ```powershell
-npm install
-npm start
+npm --prefix src install
+npm --prefix src start
 ```
 
 Run the focused syntax check with:
 
 ```powershell
-npm run check
+npm --prefix src run check
 ```
 
 The Electron main process is `src/main.cjs`; the renderer is `src/widget.html` and receives capabilities only through `src/widget-preload.cjs`.

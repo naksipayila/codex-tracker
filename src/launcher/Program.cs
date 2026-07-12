@@ -15,7 +15,7 @@ internal static class Program
     [STAThread]
     private static void Main()
     {
-        var projectDirectory = AppDomain.CurrentDomain.BaseDirectory;
+        var projectDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "src");
         var electron = Path.Combine(projectDirectory, "node_modules", "electron", "dist", "electron.exe");
 
         if (!File.Exists(electron) && !RunAndWait(projectDirectory, "npm install"))
