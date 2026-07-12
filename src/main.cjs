@@ -8,6 +8,8 @@ const USAGE_URL = "https://chatgpt.com/codex/settings/usage"
 const STARTUP_REGISTRY_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
 const STARTUP_VALUE_NAME = "CodexUsageTray"
 const STARTUP_SHORTCUT_NAME = "Codex Usage Tray.lnk"
+const WIDGET_EXPANDED_WIDTH = 340
+const WIDGET_COLLAPSED_WIDTH = 190
 
 let tray
 let client
@@ -347,16 +349,26 @@ function readWidgetPosition() {
   }
 }
 
-function saveWidgetPosition(x, display, width) {
-  const usableWidth = Math.max(1, display.bounds.width - width)
-  widgetPosition = {
-    xRatio: Math.max(0, Math.min(1, (x - display.bounds.x) / usableWidth)),
-  }
+function writeWidgetPosition() {
   try {
     fs.writeFileSync(path.join(app.getPath("userData"), "widget-position.json"), JSON.stringify(widgetPosition))
   } catch {
     // The widget still works if its position cannot be persisted.
   }
+}
+
+function saveWidgetPosition(x, display, width) {
+  const usableWidth = Math.max(1, display.bounds.width - width)
+  widgetPosition = {
+    ...widgetPosition,
+    xRatio: Math.max(0, Math.min(1, (x - display.bounds.x) / usableWidth)),
+  }
+  writeWidgetPosition()
+}
+
+function saveWidgetCollapsed(collapsed) {
+  widgetPosition = { ...widgetPosition, collapsed }
+  writeWidgetPosition()
 }
 
 function getTaskbarLayout(display) {
@@ -457,8 +469,9 @@ function pinWidgetAboveTaskbar() {
 }
 
 function createWidget() {
+  widgetPosition = readWidgetPosition()
   widget = new BrowserWindow({
-    width: 340,
+    width: widgetPosition?.collapsed ? WIDGET_COLLAPSED_WIDTH : WIDGET_EXPANDED_WIDTH,
     height: 34,
     frame: false,
     resizable: false,
@@ -479,7 +492,6 @@ function createWidget() {
     },
   })
 
-  widgetPosition = readWidgetPosition()
   // Keep the text above the taskbar when the taskbar is activated.
   widget.setAlwaysOnTop(true, "screen-saver")
   widget.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
@@ -602,6 +614,29 @@ app.whenReady().then(async () => {
   })
   ipcMain.on("widget:drag-end", () => {
     widgetDragStart = null
+  })
+  ipcMain.handle("widget:get-weekly-collapsed", () => Boolean(widgetPosition?.collapsed))
+  ipcMain.handle("widget:toggle-weekly", () => {
+    if (!widget || widget.isDestroyed()) return false
+    const collapsed = !widgetPosition?.collapsed
+    const width = collapsed ? WIDGET_COLLAPSED_WIDTH : WIDGET_EXPANDED_WIDTH
+    const currentBounds = widget.getBounds()
+    const display = screen.getDisplayMatching(currentBounds)
+    const desiredX = currentBounds.x + currentBounds.width - width
+    const nextX = Math.max(display.bounds.x, Math.min(display.bounds.x + display.bounds.width - width, desiredX))
+
+    snappingWidget = true
+    widget.setResizable(true)
+    widget.setBounds({ x: nextX, y: currentBounds.y, width, height: currentBounds.height })
+    widget.setResizable(false)
+    setTimeout(() => {
+      snappingWidget = false
+    }, 100)
+
+    saveWidgetCollapsed(collapsed)
+    const updatedBounds = widget.getBounds()
+    saveWidgetPosition(updatedBounds.x, display, updatedBounds.width)
+    return collapsed
   })
   ipcMain.on("widget:context-menu", async () => {
     if (!widget || widget.isDestroyed()) return

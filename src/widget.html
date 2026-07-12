@@ -22,6 +22,7 @@
         display: grid;
         grid-template-columns: 1fr auto 1fr;
         align-items: center;
+        width: calc(100% - 14px);
         height: 100%;
         padding: 0 8px;
         cursor: grab;
@@ -30,11 +31,17 @@
       .metric {
         display: flex;
         align-items: center;
-        gap: 8px;
+        gap: 6px;
         white-space: nowrap;
       }
       .metric:first-child { justify-self: end; }
       .metric:last-child { justify-self: start; }
+      main.weekly-hidden .divider,
+      main.weekly-hidden .weekly-metric { display: none; }
+      main.weekly-hidden {
+        grid-template-columns: 1fr;
+        width: calc(100% - 33px);
+      }
       .label {
         display: flex;
         align-items: center;
@@ -53,6 +60,7 @@
         align-items: center;
         justify-content: flex-end;
         min-width: 39px;
+        margin-left: -4px;
         height: 20px;
         color: #78e0b1;
         font-family: inherit;
@@ -65,7 +73,7 @@
       .divider {
         width: 1px;
         height: 22px;
-        margin: 0 12px;
+        margin: 0 8px;
         background: rgba(112, 150, 188, .64);
       }
       .reset {
@@ -73,6 +81,7 @@
         align-items: center;
         justify-content: flex-end;
         min-width: 78px;
+        margin-left: -13px;
         height: 24px;
         color: #aed0f7;
         font-family: inherit;
@@ -83,6 +92,22 @@
         font-variant-numeric: tabular-nums;
       }
       main:active { cursor: grabbing; }
+      .weekly-toggle {
+        position: fixed;
+        top: 0;
+        right: 19px;
+        width: 14px;
+        height: 100%;
+        padding: 0;
+        border: 0;
+        background: transparent;
+        color: rgba(174, 208, 247, .72);
+        font: 700 12px/1 "Segoe UI", sans-serif;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, .7);
+        cursor: pointer;
+        outline: none;
+      }
+      .weekly-toggle:hover { color: #d7e9ff; }
       ::-webkit-scrollbar { display: none; }
     </style>
   </head>
@@ -90,9 +115,23 @@
     <main id="usage" title="Codex usage limits">
       <div class="metric"><span class="label">5H</span><strong class="value" id="five-hour">--</strong><span class="reset" id="five-hour-reset"></span></div>
       <span class="divider"></span>
-      <div class="metric"><span class="label">W</span><strong class="value" id="weekly">--</strong><span class="reset" id="weekly-reset"></span></div>
+      <div class="metric weekly-metric"><span class="label">W</span><strong class="value" id="weekly">--</strong><span class="reset" id="weekly-reset"></span></div>
     </main>
+    <button class="weekly-toggle" id="weekly-toggle" aria-label="Hide weekly usage" title="Hide weekly usage">&lt;</button>
     <script>
+      const usage = document.querySelector("#usage")
+      const weeklyToggle = document.querySelector("#weekly-toggle")
+
+      const updateWeeklyToggle = (collapsed) => {
+        const label = collapsed ? "Show weekly usage" : "Hide weekly usage"
+        usage.classList.toggle("weekly-hidden", collapsed)
+        weeklyToggle.textContent = collapsed ? ">" : "<"
+        weeklyToggle.setAttribute("aria-label", label)
+        weeklyToggle.setAttribute("aria-expanded", String(!collapsed))
+        weeklyToggle.title = label
+      }
+      window.codexUsage.getWeeklyCollapsed().then(updateWeeklyToggle)
+
       window.codexUsage.onUpdate((usage) => {
         document.querySelector("#five-hour").textContent = usage.fiveHour
         document.querySelector("#five-hour-reset").textContent = usage.fiveHourReset ? usage.fiveHourReset : ""
@@ -105,9 +144,14 @@
         window.codexUsage.showContextMenu()
       })
       document.addEventListener("pointerdown", (event) => {
-        if (event.button !== 0) return
-        document.querySelector("#usage").setPointerCapture(event.pointerId)
+        if (event.button !== 0 || event.target === weeklyToggle) return
+        usage.setPointerCapture(event.pointerId)
         window.codexUsage.startDrag(event.screenX)
+      })
+      weeklyToggle.addEventListener("pointerdown", (event) => event.stopPropagation())
+      weeklyToggle.addEventListener("click", async (event) => {
+        event.stopPropagation()
+        updateWeeklyToggle(await window.codexUsage.toggleWeekly())
       })
       document.addEventListener("pointermove", (event) => {
         if ((event.buttons & 1) === 0) return

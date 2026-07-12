@@ -16,4 +16,10 @@ contextBridge.exposeInMainWorld("codexUsage", {
   endDrag() {
     ipcRenderer.send("widget:drag-end")
   },
+  getWeeklyCollapsed() {
+    return ipcRenderer.invoke("widget:get-weekly-collapsed")
+  },
+  toggleWeekly() {
+    return ipcRenderer.invoke("widget:toggle-weekly")
+  },
 })
