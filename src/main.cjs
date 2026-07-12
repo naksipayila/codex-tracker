@@ -21,6 +21,7 @@ let widgetPosition
 let snappingWidget = false
 let widgetHiddenByUser = false
 let widgetDragStart
+let zOrderKeeper
 
 function createTrayIcon() {
   const customIcon = nativeImage.createFromPath(path.join(__dirname, "icon.png"))
@@ -383,9 +384,9 @@ function positionWidget(preferredX) {
     ? bounds.x + Math.round((bounds.width - width) * widgetPosition.xRatio)
     : defaultX
   let x = Math.max(bounds.x, Math.min(maxX, preferredX ?? savedX))
-  let y = workArea.y + workArea.height - height
+  let y = bounds.y + bounds.height - taskbar.size + Math.round((taskbar.size - height) / 2)
 
-  if (taskbar.side === "top") y = bounds.y + taskbar.size
+  if (taskbar.side === "top") y = bounds.y + Math.round((taskbar.size - height) / 2)
   if (taskbar.side === "left") {
     x = workArea.x
     y = bounds.y + Math.round((bounds.height - height) * 0.3)
@@ -428,14 +429,33 @@ function raiseWidget() {
   if (!widget || widget.isDestroyed() || widgetHiddenByUser) return
 
   if (!widget.isVisible()) widget.showInactive()
-  widget.setAlwaysOnTop(true, "floating")
+  widget.setAlwaysOnTop(true, "screen-saver")
   widget.moveTop()
+}
+
+function pinWidgetAboveTaskbar() {
+  const launcher = path.join(__dirname, "..", "start-widget.exe")
+  if (!widget || widget.isDestroyed() || !fs.existsSync(launcher)) return
+
+  const handle = widget.getNativeWindowHandle()
+  const windowHandle = handle.length === 8 ? handle.readBigUInt64LE().toString() : handle.readUInt32LE().toString()
+  zOrderKeeper = spawn(launcher, ["--pin-hwnd", windowHandle, "--parent-pid", String(process.pid)], {
+    windowsHide: true,
+    stdio: "ignore",
+  })
+  zOrderKeeper.on("error", () => {
+    zOrderKeeper = null
+  })
+  zOrderKeeper.on("exit", () => {
+    zOrderKeeper = null
+  })
+  zOrderKeeper.unref()
 }
 
 function createWidget() {
   widget = new BrowserWindow({
-    width: 320,
-    height: 42,
+    width: 340,
+    height: 34,
     frame: false,
     resizable: false,
     movable: true,
@@ -445,8 +465,9 @@ function createWidget() {
     skipTaskbar: true,
     hasShadow: false,
     thickFrame: false,
+    transparent: true,
     show: false,
-    backgroundColor: "#1c242e",
+    backgroundColor: "#00000000",
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -455,8 +476,8 @@ function createWidget() {
   })
 
   widgetPosition = readWidgetPosition()
-  // The Windows taskbar is itself topmost, so the normal floating level can be hidden behind it.
-  widget.setAlwaysOnTop(true, "floating")
+  // Keep the text above the taskbar when the taskbar is activated.
+  widget.setAlwaysOnTop(true, "screen-saver")
   widget.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
   widget.loadFile(path.join(__dirname, "widget.html"))
   widget.once("ready-to-show", () => {
@@ -465,6 +486,7 @@ function createWidget() {
     updateWidget()
     widget.show()
     raiseWidget()
+    pinWidgetAboveTaskbar()
   })
   widget.on("closed", () => {
     widget = null
@@ -652,4 +674,5 @@ app.on("before-quit", () => {
   clearInterval(loginPoll)
   client?.stop()
   loginProcess?.kill()
+  zOrderKeeper?.kill()
 })
