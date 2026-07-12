@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Menu, nativeImage, screen, shell, Tray } = require("electron")
+const { app, BrowserWindow, ipcMain, Menu, nativeImage, screen, shell, systemPreferences, Tray } = require("electron")
 const { spawn } = require("node:child_process")
 const fs = require("node:fs")
 const path = require("node:path")
@@ -10,6 +10,7 @@ const STARTUP_VALUE_NAME = "CodexUsageTray"
 const STARTUP_SHORTCUT_NAME = "Codex Usage Tray.lnk"
 const WIDGET_EXPANDED_WIDTH = 340
 const WIDGET_COLLAPSED_WIDTH = 190
+const WIDGET_RESIZE_DURATION_MS = 180
 
 let tray
 let client
@@ -23,6 +24,7 @@ let widgetPosition
 let snappingWidget = false
 let widgetHiddenByUser = false
 let widgetDragStart
+let widgetResizeAnimation
 let zOrderKeeper
 
 function createTrayIcon() {
@@ -383,6 +385,62 @@ function getTaskbarLayout(display) {
     : { side: "left", size: bounds.width - workArea.width }
 }
 
+function shouldAnimateWidget() {
+  try {
+    const settings = systemPreferences.getAnimationSettings()
+    return settings.shouldRenderRichAnimation && !settings.prefersReducedMotion
+  } catch {
+    return true
+  }
+}
+
+function animateWidgetWidth(targetWidth) {
+  if (!widget || widget.isDestroyed()) return
+
+  if (widgetResizeAnimation) clearTimeout(widgetResizeAnimation.timer)
+
+  const startBounds = widget.getBounds()
+  const display = screen.getDisplayMatching(startBounds)
+  const right = Math.max(
+    display.bounds.x + targetWidth,
+    Math.min(display.bounds.x + display.bounds.width, startBounds.x + startBounds.width),
+  )
+  const targetBounds = { ...startBounds, x: right - targetWidth, width: targetWidth }
+  const animation = { timer: null }
+  widgetResizeAnimation = animation
+  snappingWidget = true
+  widget.setResizable(true)
+
+  const finish = () => {
+    if (widgetResizeAnimation !== animation || !widget || widget.isDestroyed()) return
+    widget.setBounds(targetBounds)
+    widget.setResizable(false)
+    widgetResizeAnimation = null
+    const updatedBounds = widget.getBounds()
+    saveWidgetPosition(updatedBounds.x, display, updatedBounds.width)
+    setTimeout(() => {
+      if (!widgetResizeAnimation) snappingWidget = false
+    }, 100)
+  }
+
+  if (!shouldAnimateWidget() || startBounds.width === targetWidth) {
+    finish()
+    return
+  }
+
+  const startedAt = Date.now()
+  const frame = () => {
+    if (widgetResizeAnimation !== animation || !widget || widget.isDestroyed()) return
+    const progress = Math.min(1, (Date.now() - startedAt) / WIDGET_RESIZE_DURATION_MS)
+    const eased = 1 - Math.pow(1 - progress, 3)
+    const width = Math.round(startBounds.width + (targetWidth - startBounds.width) * eased)
+    widget.setBounds({ ...startBounds, x: right - width, width })
+    if (progress < 1) animation.timer = setTimeout(frame, 16)
+    else finish()
+  }
+  frame()
+}
+
 function positionWidget(preferredX) {
   if (!widget) return
 
@@ -503,6 +561,7 @@ function createWidget() {
     widget.show()
     raiseWidget()
     pinWidgetAboveTaskbar()
+    widget.webContents.send("widget:animate-in", shouldAnimateWidget())
   })
   widget.on("closed", () => {
     widget = null
@@ -620,22 +679,8 @@ app.whenReady().then(async () => {
     if (!widget || widget.isDestroyed()) return false
     const collapsed = !widgetPosition?.collapsed
     const width = collapsed ? WIDGET_COLLAPSED_WIDTH : WIDGET_EXPANDED_WIDTH
-    const currentBounds = widget.getBounds()
-    const display = screen.getDisplayMatching(currentBounds)
-    const desiredX = currentBounds.x + currentBounds.width - width
-    const nextX = Math.max(display.bounds.x, Math.min(display.bounds.x + display.bounds.width - width, desiredX))
-
-    snappingWidget = true
-    widget.setResizable(true)
-    widget.setBounds({ x: nextX, y: currentBounds.y, width, height: currentBounds.height })
-    widget.setResizable(false)
-    setTimeout(() => {
-      snappingWidget = false
-    }, 100)
-
     saveWidgetCollapsed(collapsed)
-    const updatedBounds = widget.getBounds()
-    saveWidgetPosition(updatedBounds.x, display, updatedBounds.width)
+    animateWidgetWidth(width)
     return collapsed
   })
   ipcMain.on("widget:context-menu", async () => {

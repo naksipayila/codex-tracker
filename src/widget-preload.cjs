@@ -4,6 +4,9 @@ contextBridge.exposeInMainWorld("codexUsage", {
   onUpdate(callback) {
     ipcRenderer.on("usage:update", (_, usage) => callback(usage))
   },
+  onAnimateIn(callback) {
+    ipcRenderer.once("widget:animate-in", (_, enabled) => callback(enabled))
+  },
   showContextMenu() {
     ipcRenderer.send("widget:context-menu")
   },
