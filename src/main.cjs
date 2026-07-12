@@ -3,18 +3,19 @@ const { spawn } = require("node:child_process")
 const fs = require("node:fs")
 const path = require("node:path")
 
-const REFRESH_INTERVAL_MS = 60_000
+const REFRESH_INTERVAL_MS = 30_000
 const USAGE_URL = "https://chatgpt.com/codex/settings/usage"
 const STARTUP_REGISTRY_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
 const STARTUP_VALUE_NAME = "CodexUsageTray"
 const STARTUP_SHORTCUT_NAME = "Codex Usage Tray.lnk"
-const WIDGET_EXPANDED_WIDTH = 340
+const WIDGET_EXPANDED_WIDTH = 380
 const WIDGET_COLLAPSED_WIDTH = 190
 const WIDGET_RESIZE_DURATION_MS = 180
 
 let tray
 let client
 let refreshTimer
+let refreshInFlight = false
 let widget
 let loginProcess
 let loginPoll
@@ -486,17 +487,20 @@ function updateWidget() {
   const fiveHour = codexLimits.find((limit) => limit.windowDurationMins === 300)
   const weekly = codexLimits.find((limit) => limit.windowDurationMins === 10_080)
   const percentRemaining = (limit) => Math.max(0, Math.min(100, 100 - Number(limit?.usedPercent ?? 0))).toFixed(0)
-  const resetTime = (limit) => {
+  const resetTime = (limit, includeDate = false) => {
     if (!limit?.resetsAt) return ""
     const timestamp = limit.resetsAt < 10_000_000_000 ? limit.resetsAt * 1000 : limit.resetsAt
-    return new Date(timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    const date = new Date(timestamp)
+    const time = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`
+    if (!includeDate) return time
+    return `${String(date.getDate()).padStart(2, "0")}.${String(date.getMonth() + 1).padStart(2, "0")} ${time}`
   }
 
   widget.webContents.send("usage:update", {
     fiveHour: fiveHour ? `${percentRemaining(fiveHour)}%` : "--",
     fiveHourReset: resetTime(fiveHour),
     weekly: weekly ? `${percentRemaining(weekly)}%` : "--",
-    weeklyReset: resetTime(weekly),
+    weeklyReset: resetTime(weekly, true),
     status: lastError,
   })
 }
@@ -582,7 +586,9 @@ function createWidget() {
 }
 
 async function refreshLimits() {
-  if (!client) return
+  if (!client || refreshInFlight) return
+
+  refreshInFlight = true
 
   try {
     const result = await client.request("account/rateLimits/read", {})
@@ -591,6 +597,8 @@ async function refreshLimits() {
   } catch (error) {
     latestLimits = []
     lastError = `Could not read Codex usage: ${error.message}`
+  } finally {
+    refreshInFlight = false
   }
   updateTray()
 }
