@@ -376,8 +376,12 @@ function positionWidget(preferredX) {
 
   const display = screen.getPrimaryDisplay()
   const { bounds, workArea } = display
-  const [width, height] = widget.getSize()
   const taskbar = getTaskbarLayout(display)
+  const [width, currentHeight] = widget.getSize()
+  const height = taskbar.side === "top" || taskbar.side === "bottom"
+    ? Math.max(28, Math.min(34, Math.round(taskbar.size * 0.7)))
+    : currentHeight
+  if (height !== currentHeight) widget.setSize(width, height)
   const maxX = bounds.x + bounds.width - width
   const defaultX = bounds.x + Math.round((bounds.width - width) * 0.3)
   const savedX = widgetPosition
