@@ -329,21 +329,7 @@ function updateTray() {
         raiseWidget()
       },
     },
-    {
-      label: "Reset widget position",
-      click: () => {
-        widgetPosition = null
-        try {
-          fs.unlinkSync(path.join(app.getPath("userData"), "widget-position.json"))
-        } catch {
-          // No saved position is also a valid reset state.
-        }
-        positionWidget()
-      },
-    },
-    { label: "Refresh now", click: refreshLimits },
     { label: "Open Codex usage dashboard", click: () => shell.openExternal(USAGE_URL) },
-    { type: "separator" },
     { label: "Quit", click: () => app.quit() },
   ]
 
@@ -626,9 +612,6 @@ app.whenReady().then(async () => {
           widget.hide()
         },
       },
-      { type: "separator" },
-      { label: "Refresh now", click: refreshLimits },
-      { label: "Open Codex usage dashboard", click: () => shell.openExternal(USAGE_URL) },
       { type: "separator" },
       { label: "Quit", click: () => app.quit() },
     ]
