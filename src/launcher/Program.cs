@@ -182,7 +182,7 @@ internal static class Program
     {
         var foregroundWindow = GetForegroundWindow();
         if (foregroundWindow == IntPtr.Zero || foregroundWindow == pinnedWindow ||
-            !IsWindowVisible(foregroundWindow) || IsTaskbarWindow(foregroundWindow) || IsZoomed(foregroundWindow))
+            !IsWindowVisible(foregroundWindow) || IsTaskbarWindow(foregroundWindow))
         {
             return false;
         }
@@ -296,9 +296,6 @@ internal static class Program
 
     [DllImport("user32.dll")]
     private static extern bool IsWindowVisible(IntPtr hWnd);
-
-    [DllImport("user32.dll")]
-    private static extern bool IsZoomed(IntPtr hWnd);
 
     [DllImport("user32.dll")]
     private static extern bool GetWindowRect(IntPtr hWnd, out WindowRect lpRect);
