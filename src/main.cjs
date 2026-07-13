@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, Menu, nativeImage, screen, shell, systemPreferences, Tray } = require("electron")
+const { app, BrowserWindow, ipcMain, Menu, nativeImage, powerMonitor, screen, shell, systemPreferences, Tray } = require("electron")
 const { spawn } = require("node:child_process")
 const fs = require("node:fs")
 const path = require("node:path")
@@ -26,6 +26,7 @@ let snappingWidget = false
 let widgetHiddenByUser = false
 let widgetDragStart
 let widgetResizeTimer
+let widgetPositionTimer
 let zOrderKeeper
 let zOrderRestartTimer
 let quitting = false
@@ -388,6 +389,7 @@ function saveWidgetHideInFullscreen(hideInFullscreen) {
 
 function getTaskbarLayout(display) {
   const { bounds, workArea } = display
+  if (workArea.width === bounds.width && workArea.height === bounds.height) return null
   if (workArea.height < bounds.height) {
     return workArea.y === bounds.y
       ? { side: "bottom", size: bounds.height - workArea.height }
@@ -439,11 +441,12 @@ function resizeWidgetWidth(targetWidth, delay = 0) {
 }
 
 function positionWidget(preferredX) {
-  if (!widget) return
+  if (!widget || widget.isDestroyed()) return false
 
   const display = screen.getPrimaryDisplay()
   const { bounds, workArea } = display
   const taskbar = getTaskbarLayout(display)
+  if (!taskbar) return false
   const [width, currentHeight] = widget.getSize()
   const height = taskbar.side === "top" || taskbar.side === "bottom"
     ? Math.max(28, Math.min(34, Math.round(taskbar.size * 0.7)))
@@ -454,7 +457,8 @@ function positionWidget(preferredX) {
   const savedX = widgetPosition
     ? bounds.x + Math.round((bounds.width - width) * widgetPosition.xRatio)
     : defaultX
-  let x = Math.max(bounds.x, Math.min(maxX, preferredX ?? savedX))
+  const requestedX = Number.isFinite(preferredX) ? preferredX : savedX
+  let x = Math.max(bounds.x, Math.min(maxX, requestedX))
   let y = bounds.y + bounds.height - taskbar.size + Math.round((taskbar.size - height) / 2)
 
   if (taskbar.side === "top") y = bounds.y + Math.round((taskbar.size - height) / 2)
@@ -472,6 +476,20 @@ function positionWidget(preferredX) {
   setTimeout(() => {
     snappingWidget = false
   }, 0)
+  return true
+}
+
+function scheduleWidgetPosition(delay = 150, restartPinning = false, retries = 3) {
+  clearTimeout(widgetPositionTimer)
+  widgetPositionTimer = setTimeout(() => {
+    if (!positionWidget() && retries > 0) {
+      scheduleWidgetPosition(250, restartPinning, retries - 1)
+      return
+    }
+    if (widgetHiddenByUser) return
+    raiseWidget()
+    if (restartPinning) restartWidgetPinning()
+  }, delay)
 }
 
 function updateWidget() {
@@ -764,9 +782,10 @@ app.whenReady().then(async () => {
   createWidget()
   updateTray()
 
-  screen.on("display-added", positionWidget)
-  screen.on("display-removed", positionWidget)
-  screen.on("display-metrics-changed", positionWidget)
+  screen.on("display-added", () => scheduleWidgetPosition())
+  screen.on("display-removed", () => scheduleWidgetPosition())
+  screen.on("display-metrics-changed", () => scheduleWidgetPosition())
+  powerMonitor.on("resume", () => scheduleWidgetPosition(500, true))
 
   try {
     if (!(await isCodexCliAvailable())) {
@@ -793,6 +812,7 @@ app.on("before-quit", () => {
   quitting = true
   clearInterval(refreshTimer)
   clearInterval(loginPoll)
+  clearTimeout(widgetPositionTimer)
   clearTimeout(zOrderRestartTimer)
   client?.stop()
   loginProcess?.kill()
