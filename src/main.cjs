@@ -338,7 +338,7 @@ function updateTray() {
         restartWidgetPinning()
       },
     },
-    { label: "Open Codex usage dashboard", click: () => shell.openExternal(USAGE_URL) },
+    { type: "separator" },
     { label: "Quit", click: () => app.quit() },
   ]
 
