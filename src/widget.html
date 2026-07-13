@@ -205,6 +205,7 @@
         weeklyToggle.title = label
       }
       window.codexUsage.getWeeklyCollapsed().then((collapsed) => updateWeeklyToggle(collapsed, false))
+      window.codexUsage.onWeeklyCollapsed((collapsed) => updateWeeklyToggle(collapsed, false))
       const revealWidget = (enabled) => {
         if (widgetRevealed) return
         widgetRevealed = true

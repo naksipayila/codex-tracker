@@ -25,4 +25,7 @@ contextBridge.exposeInMainWorld("codexUsage", {
   toggleWeekly(collapsed, animate) {
     return ipcRenderer.invoke("widget:toggle-weekly", collapsed, animate)
   },
+  onWeeklyCollapsed(callback) {
+    ipcRenderer.on("widget:weekly-collapsed", (_, collapsed) => callback(collapsed))
+  },
 })

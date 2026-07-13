@@ -377,6 +377,13 @@ function saveWidgetCollapsed(collapsed) {
   writeWidgetPosition()
 }
 
+function setWidgetWeeklyCollapsed(collapsed, animate = false) {
+  const width = collapsed ? WIDGET_COLLAPSED_WIDTH : WIDGET_EXPANDED_WIDTH
+  saveWidgetCollapsed(collapsed)
+  resizeWidgetWidth(width, collapsed && animate ? WIDGET_RESIZE_DURATION_MS : 0)
+  return collapsed
+}
+
 function hidesInFullscreenApps() {
   return widgetPosition?.hideInFullscreen !== false
 }
@@ -701,10 +708,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("widget:toggle-weekly", (_, collapsed, animate) => {
     if (!widget || widget.isDestroyed()) return false
     if (typeof collapsed !== "boolean") collapsed = !widgetPosition?.collapsed
-    const width = collapsed ? WIDGET_COLLAPSED_WIDTH : WIDGET_EXPANDED_WIDTH
-    saveWidgetCollapsed(collapsed)
-    resizeWidgetWidth(width, collapsed && animate ? WIDGET_RESIZE_DURATION_MS : 0)
-    return collapsed
+    return setWidgetWeeklyCollapsed(collapsed, animate)
   })
   ipcMain.on("widget:context-menu", async () => {
     if (!widget || widget.isDestroyed()) return
@@ -714,11 +718,14 @@ app.whenReady().then(async () => {
       isWindowsStartupEnabled(),
     ])
     const menuItems = [
+      { label: "Open Codex usage dashboard", click: () => shell.openExternal(USAGE_URL) },
+      { label: "Refresh usage", click: refreshLimits },
+      { type: "separator" },
       ...(!loggedIn
-        ? [{ label: "Auth login", click: startCliLogin }, { type: "separator" }]
+        ? [{ label: "Sign in to Codex", click: startCliLogin }, { type: "separator" }]
         : []),
       {
-        label: "Add to Windows startup",
+        label: "Launch at Windows startup",
         type: "checkbox",
         checked: startupEnabled,
         click: async () => {
@@ -740,6 +747,15 @@ app.whenReady().then(async () => {
         click: (item) => {
           saveWidgetHideInFullscreen(item.checked)
           restartWidgetPinning()
+        },
+      },
+      {
+        label: "Show weekly usage",
+        type: "checkbox",
+        checked: !widgetPosition?.collapsed,
+        click: (item) => {
+          const collapsed = setWidgetWeeklyCollapsed(!item.checked)
+          widget.webContents.send("widget:weekly-collapsed", collapsed)
         },
       },
       { type: "separator" },
