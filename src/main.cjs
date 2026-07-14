@@ -11,6 +11,8 @@ const STARTUP_SHORTCUT_NAME = "Codex Usage Tray.lnk"
 const WIDGET_EXPANDED_WIDTH = 380
 const WIDGET_COLLAPSED_WIDTH = 190
 const WIDGET_RESIZE_DURATION_MS = 180
+const WIDGET_RESUME_POSITION_ATTEMPTS = 8
+const WIDGET_RESUME_POSITION_INTERVAL_MS = 500
 
 let tray
 let client
@@ -27,6 +29,7 @@ let widgetHiddenByUser = false
 let widgetDragStart
 let widgetResizeTimer
 let widgetPositionTimer
+let widgetResumePositionTimer
 let zOrderKeeper
 let zOrderRestartTimer
 let quitting = false
@@ -492,6 +495,33 @@ function scheduleWidgetPosition(delay = 150, restartPinning = false, retries = 3
   }, delay)
 }
 
+function restoreWidgetPositionAfterResume() {
+  clearTimeout(widgetResumePositionTimer)
+  let attemptsLeft = WIDGET_RESUME_POSITION_ATTEMPTS
+
+  const restore = () => {
+    if (quitting || !widget || widget.isDestroyed()) {
+      widgetResumePositionTimer = null
+      return
+    }
+
+    // Windows can adjust the work area and clamp topmost windows several times while the shell wakes up.
+    positionWidget()
+    attemptsLeft -= 1
+    if (attemptsLeft > 0) {
+      widgetResumePositionTimer = setTimeout(restore, WIDGET_RESUME_POSITION_INTERVAL_MS)
+      return
+    }
+
+    widgetResumePositionTimer = null
+    if (widgetHiddenByUser) return
+    raiseWidget()
+    restartWidgetPinning()
+  }
+
+  widgetResumePositionTimer = setTimeout(restore, WIDGET_RESUME_POSITION_INTERVAL_MS)
+}
+
 function updateWidget() {
   if (!widget || widget.isDestroyed()) return
 
@@ -785,7 +815,8 @@ app.whenReady().then(async () => {
   screen.on("display-added", () => scheduleWidgetPosition())
   screen.on("display-removed", () => scheduleWidgetPosition())
   screen.on("display-metrics-changed", () => scheduleWidgetPosition())
-  powerMonitor.on("resume", () => scheduleWidgetPosition(500, true))
+  powerMonitor.on("resume", restoreWidgetPositionAfterResume)
+  powerMonitor.on("unlock-screen", restoreWidgetPositionAfterResume)
 
   try {
     if (!(await isCodexCliAvailable())) {
@@ -813,6 +844,7 @@ app.on("before-quit", () => {
   clearInterval(refreshTimer)
   clearInterval(loginPoll)
   clearTimeout(widgetPositionTimer)
+  clearTimeout(widgetResumePositionTimer)
   clearTimeout(zOrderRestartTimer)
   client?.stop()
   loginProcess?.kill()
