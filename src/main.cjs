@@ -1,13 +1,20 @@
-const { app, BrowserWindow, ipcMain, Menu, nativeImage, powerMonitor, screen, shell, systemPreferences, Tray } = require("electron")
+const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerMonitor, screen, shell, systemPreferences, Tray } = require("electron")
 const { spawn } = require("node:child_process")
 const fs = require("node:fs")
 const path = require("node:path")
+const vm = require("node:vm")
 
+const APP_ROOT = path.join(__dirname, "..")
 const REFRESH_INTERVAL_MS = 30_000
 const USAGE_URL = "https://chatgpt.com/codex/settings/usage"
 const STARTUP_REGISTRY_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run"
 const STARTUP_VALUE_NAME = "CodexUsageTray"
 const STARTUP_SHORTCUT_NAME = "Codex Usage Tray.lnk"
+const UPDATE_BRANCH = "main"
+const UPDATE_LOCK_FILE = ".update.lock"
+const UPDATE_PENDING_FILE = ".update.pending"
+const UPDATE_REMOTE = "origin"
+const UPDATE_RESULT_FILE = "update-result.json"
 const WIDGET_EXPANDED_WIDTH = 380
 const WIDGET_COLLAPSED_WIDTH = 190
 const WIDGET_RESIZE_DURATION_MS = 180
@@ -33,6 +40,12 @@ let widgetResumePositionTimer
 let zOrderKeeper
 let zOrderRestartTimer
 let quitting = false
+let updateInFlight = false
+let updateRepairNeeded = false
+let updateRestartPending = false
+
+const hasSingleInstanceLock = app.requestSingleInstanceLock()
+if (!hasSingleInstanceLock) app.quit()
 
 function createTrayIcon() {
   const customIcon = nativeImage.createFromPath(path.join(__dirname, "icon.png"))
@@ -330,6 +343,416 @@ function normalizeLimits(result) {
   })
 }
 
+function runCommand(command, args) {
+  return new Promise((resolve, reject) => {
+    const process = spawn(command, args, {
+      cwd: APP_ROOT,
+      windowsHide: true,
+      stdio: ["ignore", "pipe", "pipe"],
+    })
+    let stdout = ""
+    let stderr = ""
+
+    process.stdout.setEncoding("utf8")
+    process.stderr.setEncoding("utf8")
+    process.stdout.on("data", (chunk) => {
+      stdout += chunk
+    })
+    process.stderr.on("data", (chunk) => {
+      stderr += chunk
+    })
+    process.once("error", reject)
+    process.once("close", (code) => resolve({ code, stdout, stderr }))
+  })
+}
+
+async function runGitCommand(args) {
+  try {
+    return await runCommand("git", ["-C", APP_ROOT, ...args])
+  } catch (error) {
+    if (error.code === "ENOENT") throw new Error("Git is not installed or is not available on PATH.")
+    throw error
+  }
+}
+
+async function runGit(args) {
+  const result = await runGitCommand(args)
+  if (result.code !== 0) {
+    throw new Error((result.stderr || result.stdout).trim() || `Git exited with code ${result.code ?? "unknown"}.`)
+  }
+  return result.stdout.trim()
+}
+
+function asPowerShellUtf8(value) {
+  const encoded = Buffer.from(value, "utf8").toString("base64")
+  return `[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String("${encoded}"))`
+}
+
+function getUpdateLockPath() {
+  return path.join(APP_ROOT, UPDATE_LOCK_FILE)
+}
+
+function getUpdatePendingPath() {
+  return path.join(APP_ROOT, UPDATE_PENDING_FILE)
+}
+
+function isProcessRunning(pid) {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function hasActiveUpdateLock() {
+  const lockPath = getUpdateLockPath()
+  let lockContent
+
+  try {
+    lockContent = fs.readFileSync(lockPath, "utf8")
+    const [pidText, startedAtText] = lockContent.trim().split("|")
+    const pid = Number(pidText)
+    const age = Date.now() - Number(startedAtText)
+    if (Number.isInteger(pid) && age >= 0 && age < 6 * 60 * 60 * 1000 && isProcessRunning(pid)) {
+      return true
+    }
+  } catch {
+    return false
+  }
+
+  try {
+    if (fs.readFileSync(lockPath, "utf8") === lockContent) fs.unlinkSync(lockPath)
+  } catch {
+    // The lock changed or disappeared while it was being inspected.
+  }
+  return false
+}
+
+function startDetachedUpdater(expectedCommit, targetCommit) {
+  const keeperPid = zOrderKeeper?.pid ?? 0
+  const launcher = path.join(APP_ROOT, "start-widget.exe")
+  const lockPath = getUpdateLockPath()
+  const pendingPath = getUpdatePendingPath()
+  const resultPath = path.join(app.getPath("userData"), UPDATE_RESULT_FILE)
+  const script = `
+$ErrorActionPreference = "Continue"
+$repo = ${asPowerShellUtf8(APP_ROOT)}
+$src = ${asPowerShellUtf8(__dirname)}
+$launcher = ${asPowerShellUtf8(launcher)}
+$lockPath = ${asPowerShellUtf8(lockPath)}
+$pendingPath = ${asPowerShellUtf8(pendingPath)}
+$resultPath = ${asPowerShellUtf8(resultPath)}
+$expectedCommit = ${asPowerShellUtf8(expectedCommit)}
+$targetCommit = ${asPowerShellUtf8(targetCommit)}
+$result = @{ success = $false; notified = $false; message = "" }
+
+function Show-UpdateError([string] $message) {
+  try {
+    Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
+    $body = "The application could not be updated." + [Environment]::NewLine + [Environment]::NewLine + $message
+    [void][System.Windows.Forms.MessageBox]::Show(
+      $body,
+      "Codex Usage Tray",
+      [System.Windows.Forms.MessageBoxButtons]::OK,
+      [System.Windows.Forms.MessageBoxIcon]::Error
+    )
+    return $true
+  } catch {
+    return $false
+  }
+}
+
+try {
+  Wait-Process -Id ${process.pid} -ErrorAction SilentlyContinue
+  if (${keeperPid} -gt 0) {
+    Wait-Process -Id ${keeperPid} -ErrorAction SilentlyContinue
+  }
+
+  $branchOutput = & git -C $repo branch --show-current 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    throw "Could not read the current Git branch: " + (($branchOutput | Out-String).Trim())
+  }
+  if (($branchOutput | Out-String).Trim() -ne "${UPDATE_BRANCH}") {
+    throw "Automatic updates require the ${UPDATE_BRANCH} branch."
+  }
+
+  $headOutput = & git -C $repo rev-parse HEAD 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    throw "Could not read the current commit: " + (($headOutput | Out-String).Trim())
+  }
+  if (($headOutput | Out-String).Trim() -ne $expectedCommit) {
+    throw "The current commit changed before the update started. Check for updates again."
+  }
+
+  $statusOutput = & git -C $repo status --porcelain --untracked-files=all 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    throw "Could not inspect the working tree: " + (($statusOutput | Out-String).Trim())
+  }
+  if (($statusOutput | Out-String).Trim()) {
+    throw "The working tree changed before the update started. Commit or discard the local changes, then try again."
+  }
+
+  & git -C $repo merge-base --is-ancestor $expectedCommit $targetCommit 2>&1 | Out-Null
+  if ($LASTEXITCODE -ne 0) {
+    throw "The target commit is no longer a fast-forward update. Check for updates again."
+  }
+
+  $gitOutput = & git -C $repo merge --ff-only $targetCommit 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    throw "Git update failed: " + (($gitOutput | Out-String).Trim())
+  }
+
+  $updatedHead = & git -C $repo rev-parse HEAD 2>&1
+  if ($LASTEXITCODE -ne 0 -or ($updatedHead | Out-String).Trim() -ne $targetCommit) {
+    throw "Git did not finish at the expected commit."
+  }
+
+  $updatedBranch = & git -C $repo branch --show-current 2>&1
+  if ($LASTEXITCODE -ne 0 -or ($updatedBranch | Out-String).Trim() -ne "${UPDATE_BRANCH}") {
+    throw "The current branch changed while the update was running."
+  }
+
+  $npmOutput = & npm.cmd --prefix $src install 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    throw "Dependency installation failed: " + (($npmOutput | Out-String).Trim())
+  }
+
+  $checkOutput = & npm.cmd --prefix $src run check 2>&1
+  if ($LASTEXITCODE -ne 0) {
+    throw "The updated application failed its syntax check: " + (($checkOutput | Out-String).Trim())
+  }
+
+  Remove-Item -LiteralPath $pendingPath -Force -ErrorAction Stop
+  $result.success = $true
+  $result.message = "Updated to ${targetCommit.slice(0, 7)}, installed dependencies, and passed the syntax check."
+} catch {
+  $result.message = $_.Exception.Message
+} finally {
+  try {
+    $result | ConvertTo-Json -Compress | Set-Content -LiteralPath $resultPath -Encoding UTF8 -ErrorAction Stop
+  } catch {
+  }
+
+  Remove-Item -LiteralPath $lockPath -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Milliseconds 250
+
+  try {
+    Start-Process -FilePath $launcher -WorkingDirectory $repo -ErrorAction Stop
+  } catch {
+    [void] (Show-UpdateError ("The update process finished, but the application could not restart: " + $_.Exception.Message))
+  }
+}
+`
+  const encodedScript = Buffer.from(script, "utf16le").toString("base64")
+  const powershell = path.join(
+    process.env.SystemRoot ?? "C:\\Windows",
+    "System32",
+    "WindowsPowerShell",
+    "v1.0",
+    "powershell.exe",
+  )
+
+  updateRestartPending = true
+  stopWidgetPinning()
+  return new Promise((resolve, reject) => {
+    const updater = spawn(powershell, [
+      "-NoLogo",
+      "-NoProfile",
+      "-NonInteractive",
+      "-ExecutionPolicy",
+      "Bypass",
+      "-WindowStyle",
+      "Hidden",
+      "-EncodedCommand",
+      encodedScript,
+    ], {
+      cwd: APP_ROOT,
+      detached: true,
+      windowsHide: true,
+      stdio: "ignore",
+    })
+
+    let started = false
+    updater.once("error", (error) => {
+      if (started) return
+      updateRestartPending = false
+      restartWidgetPinning()
+      reject(error)
+    })
+    updater.once("spawn", () => {
+      try {
+        fs.writeFileSync(lockPath, `${updater.pid}|${Date.now()}`, {
+          encoding: "utf8",
+          flag: "wx",
+        })
+        fs.writeFileSync(pendingPath, `${expectedCommit}|${targetCommit}`, "utf8")
+      } catch (error) {
+        updater.kill()
+        try {
+          fs.unlinkSync(lockPath)
+        } catch {
+          // The failed updater may already have removed its lock.
+        }
+        updateRestartPending = false
+        restartWidgetPinning()
+        reject(new Error(`Could not prepare the application for updating: ${error.message}`))
+        return
+      }
+      started = true
+      updater.unref()
+      resolve()
+    })
+  })
+}
+
+function readUpdateResult() {
+  const resultPath = path.join(app.getPath("userData"), UPDATE_RESULT_FILE)
+  let result = null
+  let malformed = false
+
+  try {
+    const content = fs.readFileSync(resultPath, "utf8").replace(/^\uFEFF/, "")
+    const parsed = JSON.parse(content)
+    if (typeof parsed?.success === "boolean" && typeof parsed.message === "string") result = parsed
+    else malformed = true
+  } catch (error) {
+    malformed = error.code !== "ENOENT"
+    // A missing or malformed result should not affect normal startup.
+  }
+
+  if (malformed || result?.success) {
+    try {
+      fs.unlinkSync(resultPath)
+    } catch {
+      // A handled result can be discarded on a later launch.
+    }
+  }
+
+  return result
+}
+
+function showPendingUpdateResult() {
+  const result = readUpdateResult()
+  const repairPending = fs.existsSync(getUpdatePendingPath())
+  updateRepairNeeded = repairPending
+  if (!result) {
+    if (repairPending) updateTray()
+    return
+  }
+
+  if (!result.success && !repairPending) {
+    try {
+      fs.unlinkSync(path.join(app.getPath("userData"), UPDATE_RESULT_FILE))
+    } catch {
+      // A recovered result can be discarded on a later launch.
+    }
+  }
+  updateTray()
+  if (!result.success && result.notified) return
+
+  dialog.showMessageBox({
+    type: result.success ? "info" : repairPending ? "error" : "warning",
+    title: "Codex Usage Tray",
+    message: result.success
+      ? "Codex Usage Tray was updated."
+      : repairPending
+        ? "Codex Usage Tray could not be updated."
+        : "Codex Usage Tray recovered from an incomplete update.",
+    detail: result.message,
+    buttons: ["OK"],
+    noLink: true,
+  }).catch(() => {})
+}
+
+async function checkForUpdates() {
+  if (updateInFlight) return
+
+  updateInFlight = true
+  updateTray()
+
+  try {
+    if (!fs.existsSync(path.join(APP_ROOT, ".git"))) {
+      throw new Error("Automatic updates require a Git clone of the repository.")
+    }
+
+    const branch = await runGit(["branch", "--show-current"])
+    if (branch !== UPDATE_BRANCH) {
+      throw new Error(`Automatic updates require the ${UPDATE_BRANCH} branch. The current branch is ${branch || "detached"}.`)
+    }
+
+    const status = await runGit(["status", "--porcelain", "--untracked-files=all"])
+    if (status) {
+      throw new Error("The working tree has local changes. Commit or discard them before updating.")
+    }
+
+    await runGit(["fetch", "--quiet", UPDATE_REMOTE])
+    const [localCommit, remoteCommit] = await Promise.all([
+      runGit(["rev-parse", "HEAD"]),
+      runGit(["rev-parse", `refs/remotes/${UPDATE_REMOTE}/${UPDATE_BRANCH}`]),
+    ])
+
+    if (localCommit === remoteCommit && !updateRepairNeeded) {
+      await dialog.showMessageBox({
+        type: "info",
+        title: "Codex Usage Tray",
+        message: "Codex Usage Tray is up to date.",
+        detail: `${UPDATE_BRANCH} is at ${localCommit.slice(0, 7)}.`,
+        buttons: ["OK"],
+        noLink: true,
+      })
+      return
+    }
+
+    if (localCommit !== remoteCommit) {
+      const ancestry = await runGitCommand(["merge-base", "--is-ancestor", localCommit, remoteCommit])
+      if (ancestry.code === 1) {
+        throw new Error("The local main branch contains commits that are not on origin/main. Sync it manually before updating.")
+      }
+      if (ancestry.code !== 0) {
+        throw new Error((ancestry.stderr || ancestry.stdout).trim() || "Could not compare the local and remote branches.")
+      }
+
+      const targetMain = await runGit(["show", `${remoteCommit}:src/main.cjs`])
+      try {
+        new vm.Script(targetMain, { filename: "src/main.cjs" })
+      } catch (error) {
+        throw new Error(`The update failed its main-process syntax check: ${error.message}`)
+      }
+    }
+
+    const repairing = localCommit === remoteCommit
+    const confirmation = await dialog.showMessageBox({
+      type: "question",
+      title: "Codex Usage Tray",
+      message: repairing ? "The previous update needs repair." : "An update is available.",
+      detail: repairing
+        ? "The application will close, reinstall dependencies, run its syntax check, and restart."
+        : `${localCommit.slice(0, 7)} -> ${remoteCommit.slice(0, 7)}\n\nThe application will close, install dependencies, run its syntax check, and restart.`,
+      buttons: [repairing ? "Repair and restart" : "Update and restart", "Cancel"],
+      defaultId: 0,
+      cancelId: 1,
+      noLink: true,
+    })
+    if (confirmation.response !== 0) return
+
+    await startDetachedUpdater(localCommit, remoteCommit)
+    app.quit()
+  } catch (error) {
+    await dialog.showMessageBox({
+      type: "error",
+      title: "Codex Usage Tray",
+      message: "Automatic update is unavailable.",
+      detail: error.message,
+      buttons: ["OK"],
+      noLink: true,
+    })
+  } finally {
+    updateInFlight = false
+    if (!quitting && tray) updateTray()
+  }
+}
+
 function updateTray() {
   const menuItems = [
     {
@@ -341,6 +764,11 @@ function updateTray() {
         raiseWidget()
         restartWidgetPinning()
       },
+    },
+    {
+      label: updateInFlight ? "Checking for updates..." : updateRepairNeeded ? "Repair update" : "Check for updates",
+      enabled: !updateInFlight,
+      click: checkForUpdates,
     },
     { type: "separator" },
     { label: "Quit", click: () => app.quit() },
@@ -558,7 +986,7 @@ function raiseWidget() {
 
 function pinWidgetAboveTaskbar() {
   const launcher = path.join(__dirname, "..", "start-widget.exe")
-  if (quitting || zOrderKeeper || !widget || widget.isDestroyed() || !fs.existsSync(launcher)) return
+  if (quitting || updateRestartPending || zOrderKeeper || !widget || widget.isDestroyed() || !fs.existsSync(launcher)) return
 
   const handle = widget.getNativeWindowHandle()
   const windowHandle = handle.length === 8 ? handle.readBigUInt64LE().toString() : handle.readUInt32LE().toString()
@@ -729,7 +1157,12 @@ function startCliLogin() {
   }, 2000)
 }
 
-app.whenReady().then(async () => {
+if (hasSingleInstanceLock) app.whenReady().then(async () => {
+  if (hasActiveUpdateLock()) {
+    app.quit()
+    return
+  }
+
   ipcMain.on("widget:drag-start", (_, screenX) => {
     if (!widget || widget.isDestroyed()) return
     const [x] = widget.getPosition()
@@ -811,6 +1244,7 @@ app.whenReady().then(async () => {
   tray = new Tray(createTrayIcon())
   createWidget()
   updateTray()
+  showPendingUpdateResult()
 
   screen.on("display-added", () => scheduleWidgetPosition())
   screen.on("display-removed", () => scheduleWidgetPosition())
@@ -836,6 +1270,15 @@ app.whenReady().then(async () => {
   }
 
   refreshTimer = setInterval(refreshLimits, REFRESH_INTERVAL_MS)
+})
+
+app.on("second-instance", () => {
+  if (quitting || !widget || widget.isDestroyed()) return
+  widgetHiddenByUser = false
+  positionWidget()
+  widget.show()
+  raiseWidget()
+  restartWidgetPinning()
 })
 
 app.on("window-all-closed", (event) => event.preventDefault())

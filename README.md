@@ -27,7 +27,22 @@
 
 The widget stays flush with the Windows taskbar. Drag anywhere on it to change its horizontal position; the location is remembered for the current Windows user.
 
-## Right-click menu
+Automatic updates require a Git clone on a clean `main` branch with the `origin` remote configured.
+
+## System tray menu
+
+| Action | What it does |
+| --- | --- |
+| **Show widget** | Shows the taskbar widget if it was hidden. |
+| **Check for updates** | Checks `origin/main`, installs updated dependencies, verifies syntax, and restarts the app after confirmation. |
+| **Repair update** | Appears when a running app detects that dependency installation or verification still needs to finish. |
+| **Quit** | Stops the widget and tray app. |
+
+The Git update only accepts a fast-forward. It never resets, discards, or stashes tracked or untracked source files; `npm` may refresh ignored files under `src/node_modules`.
+
+If an update is interrupted, `start-widget.exe` retries dependency installation and syntax verification before Electron starts on the next launch.
+
+## Widget right-click menu
 
 | Action | What it does |
 | --- | --- |
@@ -41,7 +56,7 @@ The widget stays flush with the Windows taskbar. Drag anywhere on it to change i
 
 Limits are read locally through the official `codex app-server` interface. The app does not read browser cookies, ChatGPT web endpoints, or Codex authentication files directly.
 
-If the Codex CLI is missing, the app installs `@openai/codex` globally and then uses its local app-server connection. The tray context menu also provides **Quit** when you want to stop the app completely.
+If the Codex CLI is missing, the app installs `@openai/codex` globally and then uses its local app-server connection.
 
 ## Development
 

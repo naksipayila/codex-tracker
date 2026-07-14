@@ -23,7 +23,12 @@ internal static class Program
             return;
         }
 
-        var projectDirectory = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "src");
+        var applicationDirectory = AppDomain.CurrentDomain.BaseDirectory;
+        if (IsUpdateInProgress(applicationDirectory)) return;
+
+        var projectDirectory = Path.Combine(applicationDirectory, "src");
+        if (!CompletePendingUpdate(applicationDirectory, projectDirectory)) return;
+
         var electron = Path.Combine(projectDirectory, "node_modules", "electron", "dist", "electron.exe");
 
         if (!File.Exists(electron) && !RunAndWait(projectDirectory, "npm install"))
@@ -236,6 +241,110 @@ internal static class Program
         catch
         {
             return false;
+        }
+    }
+
+    private static bool IsUpdateInProgress(string applicationDirectory)
+    {
+        var lockPath = Path.Combine(applicationDirectory, ".update.lock");
+        string lockContent;
+        try
+        {
+            lockContent = File.ReadAllText(lockPath);
+        }
+        catch
+        {
+            return false;
+        }
+
+        try
+        {
+            var parts = lockContent.Split('|');
+            int processId;
+            long startedAt;
+            if (parts.Length == 2 &&
+                int.TryParse(parts[0], out processId) &&
+                long.TryParse(parts[1], out startedAt))
+            {
+                using (var process = Process.GetProcessById(processId))
+                {
+                    var processStartedAt = (long)(process.StartTime.ToUniversalTime() -
+                        new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc)).TotalMilliseconds;
+                    if (!process.HasExited && Math.Abs(processStartedAt - startedAt) < 5000) return true;
+                }
+            }
+        }
+        catch
+        {
+            // The process ended or the lock is malformed, so remove this exact stale lock.
+        }
+
+        try
+        {
+            if (File.ReadAllText(lockPath) == lockContent) File.Delete(lockPath);
+        }
+        catch
+        {
+        }
+        return false;
+    }
+
+    private static bool CompletePendingUpdate(string applicationDirectory, string projectDirectory)
+    {
+        var pendingPath = Path.Combine(applicationDirectory, ".update.pending");
+        if (!File.Exists(pendingPath)) return true;
+
+        var repairLockPath = Path.Combine(applicationDirectory, ".update.repair.lock");
+        FileStream repairLock;
+        try
+        {
+            repairLock = new FileStream(repairLockPath, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+        }
+        catch (IOException)
+        {
+            // Another launcher is already repairing the shared installation.
+            return false;
+        }
+
+        try
+        {
+            if (!RunAndWait(projectDirectory, "npm install") || !RunAndWait(projectDirectory, "npm run check"))
+            {
+                MessageBox.Show(
+                    "The previous update could not be completed. Make sure Node.js and your network connection are available, then start the widget again.",
+                    "Codex Usage Tray",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error
+                );
+                return false;
+            }
+
+            try
+            {
+                File.Delete(pendingPath);
+                return true;
+            }
+            catch (Exception error)
+            {
+                MessageBox.Show(
+                    "The update was repaired, but its pending marker could not be removed.\n\n" + error.Message,
+                    "Codex Usage Tray",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error
+                );
+                return false;
+            }
+        }
+        finally
+        {
+            repairLock.Dispose();
+            try
+            {
+                File.Delete(repairLockPath);
+            }
+            catch
+            {
+            }
         }
     }
 

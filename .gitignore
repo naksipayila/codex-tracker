@@ -2,6 +2,9 @@ node_modules/
 dist/
 *.log
 AGENTS.md
+.update.lock
+.update.pending
+.update.repair.lock
 
 # Electron runtime data is local to each Windows user.
 widget-position.json
