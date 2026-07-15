@@ -164,12 +164,12 @@
     </style>
   </head>
   <body class="widget-pending">
-    <main id="usage" title="Codex usage limits">
+    <main id="usage">
       <div class="metric"><span class="label">5H</span><strong class="value" id="five-hour">--</strong><span class="reset" id="five-hour-reset"></span></div>
       <span class="divider"></span>
       <div class="metric weekly-metric"><span class="label">W</span><strong class="value" id="weekly">--</strong><span class="reset" id="weekly-reset"></span></div>
     </main>
-    <button class="weekly-toggle" id="weekly-toggle" aria-label="Hide weekly usage" aria-expanded="true" title="Hide weekly usage"></button>
+    <button class="weekly-toggle" id="weekly-toggle" aria-label="Hide weekly usage" aria-expanded="true"></button>
     <script>
       const usage = document.querySelector("#usage")
       const weeklyToggle = document.querySelector("#weekly-toggle")
@@ -202,7 +202,6 @@
 
         weeklyToggle.setAttribute("aria-label", label)
         weeklyToggle.setAttribute("aria-expanded", String(!collapsed))
-        weeklyToggle.title = label
       }
       window.codexUsage.getWeeklyCollapsed().then((collapsed) => updateWeeklyToggle(collapsed, false))
       const revealWidget = (enabled) => {
@@ -222,7 +221,6 @@
         document.querySelector("#five-hour-reset").textContent = usage.fiveHourReset ? usage.fiveHourReset : ""
         document.querySelector("#weekly").textContent = usage.weekly
         document.querySelector("#weekly-reset").textContent = usage.weeklyReset ? usage.weeklyReset : ""
-        document.querySelector("#usage").title = usage.status || "Codex usage limits"
       })
       document.addEventListener("contextmenu", (event) => {
         event.preventDefault()
