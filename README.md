@@ -34,13 +34,15 @@ Automatic updates require a Git clone on a clean `main` branch with the `origin`
 | Action | What it does |
 | --- | --- |
 | **Show widget** | Shows the taskbar widget if it was hidden. |
-| **Check for updates** | Checks `origin/main`, installs updated dependencies, verifies syntax, and restarts the app after confirmation. |
+| **Check update at startup** | Enabled by default. Silently checks `origin/main` when the widget starts and immediately applies an available update. |
 | **Repair update** | Appears when a running app detects that dependency installation or verification still needs to finish. |
 | **Quit** | Stops the widget and tray app. |
 
 The Git update only accepts a fast-forward. It never resets, discards, or stashes tracked or untracked source files; `npm` may refresh ignored files under `src/node_modules`.
 
-If an update is interrupted, `start-widget.exe` retries dependency installation and syntax verification before Electron starts on the next launch.
+Updates run through a temporary copy of the C# launcher. The widget closes only after that helper reports ready, and the update is complete only after the restarted widget reports ready. Coordination state and detailed diagnostics stay outside the repository in Electron `userData`; diagnostics are written as `update.log`.
+
+If an update is interrupted, `start-widget.exe` resumes the pending Git fast-forward, dependency installation, and syntax verification on the next launch.
 
 ## Widget right-click menu
 
