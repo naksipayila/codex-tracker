@@ -1,6 +1,6 @@
 const { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, powerMonitor, screen, shell, systemPreferences, Tray } = require("electron")
 const { spawn } = require("node:child_process")
-const { randomUUID } = require("node:crypto")
+const { createHash, randomUUID } = require("node:crypto")
 const fs = require("node:fs")
 const path = require("node:path")
 const vm = require("node:vm")
@@ -17,6 +17,7 @@ const UPDATE_PENDING_FILE = "update.pending"
 const UPDATE_PREFERENCES_FILE = "update-preferences.json"
 const UPDATE_REMOTE = "origin"
 const UPDATE_RESULT_FILE = "update-result.json"
+const UPDATE_STATE_DIRECTORY = "updates"
 const UPDATE_CHECK_TIMEOUT_MS = 60_000
 const UPDATE_HANDOFF_TIMEOUT_MS = 10_000
 const MAX_UPDATE_CHANGES = 12
@@ -52,7 +53,10 @@ let updateRestartPending = false
 let updateReadySignaled = false
 let startupUpdateScheduled = false
 let startupUpdateTimer
+let updateRecoveryTimer
 
+const userDataOverride = process.env.CODEX_USAGE_TRAY_USER_DATA
+if (userDataOverride) app.setPath("userData", path.resolve(userDataOverride))
 const hasSingleInstanceLock = app.requestSingleInstanceLock()
 if (!hasSingleInstanceLock) app.quit()
 const launchedByUpdater = process.env.CODEX_UPDATE_LAUNCH === "1"
@@ -405,11 +409,40 @@ async function runGit(args) {
 }
 
 function getUpdateLockPath() {
-  return path.join(app.getPath("userData"), UPDATE_LOCK_FILE)
+  return path.join(getUpdateStateDirectory(), UPDATE_LOCK_FILE)
 }
 
 function getUpdatePendingPath() {
-  return path.join(app.getPath("userData"), UPDATE_PENDING_FILE)
+  return path.join(getUpdateStateDirectory(), UPDATE_PENDING_FILE)
+}
+
+function getUpdateResultPath() {
+  return path.join(getUpdateStateDirectory(), UPDATE_RESULT_FILE)
+}
+
+function getLegacyUpdatePath(fileName) {
+  return path.join(app.getPath("userData"), fileName)
+}
+
+function getRepositoryId() {
+  const resolved = path.resolve(APP_ROOT)
+  const root = path.parse(resolved).root
+  const normalized = resolved === root ? resolved : resolved.replace(/[\\/]+$/, "")
+  const identity = normalized.replace(/[A-Z]/g, (character) => character.toLowerCase())
+  return createHash("sha256").update(identity, "utf8").digest("hex").slice(0, 16)
+}
+
+function getUpdateStateDirectory() {
+  const baseDirectory = userDataOverride
+    ? path.resolve(userDataOverride)
+    : path.join(process.env.LOCALAPPDATA ?? app.getPath("userData"), "CodexUsageTray")
+  return path.join(baseDirectory, UPDATE_STATE_DIRECTORY, getRepositoryId())
+}
+
+function ensureUpdateStateDirectory() {
+  const directory = getUpdateStateDirectory()
+  fs.mkdirSync(directory, { recursive: true })
+  return directory
 }
 
 function getUpdatePreferencesPath() {
@@ -451,8 +484,7 @@ function isProcessRunning(pid) {
   }
 }
 
-function hasActiveUpdateLock() {
-  const lockPath = getUpdateLockPath()
+function hasActiveUpdateLockAtPath(lockPath) {
   let lockContent
 
   try {
@@ -473,6 +505,11 @@ function hasActiveUpdateLock() {
     // The lock changed or disappeared while it was being inspected.
   }
   return false
+}
+
+function hasActiveUpdateLock() {
+  return hasActiveUpdateLockAtPath(getUpdateLockPath()) ||
+    hasActiveUpdateLockAtPath(getLegacyUpdatePath(UPDATE_LOCK_FILE))
 }
 
 function waitForUpdaterReady(updater, readyPath, token) {
@@ -506,12 +543,19 @@ function waitForUpdaterReady(updater, readyPath, token) {
   })
 }
 
-function removeFailedUpdaterMarkers(updaterPid) {
+function removeFailedUpdaterMarkers(updaterPid, expectedCommit, targetCommit, token) {
   try {
-    const [pid] = fs.readFileSync(getUpdateLockPath(), "utf8").trim().split("|")
+    const lockPath = getUpdateLockPath()
+    const pendingPath = getUpdatePendingPath()
+    const lockContent = fs.readFileSync(lockPath, "utf8")
+    const pendingContent = fs.readFileSync(pendingPath, "utf8")
+    const [pid] = lockContent.trim().split("|")
     if (Number(pid) !== updaterPid) return
-    fs.unlinkSync(getUpdateLockPath())
-    fs.unlinkSync(getUpdatePendingPath())
+    if (!pendingContent.includes(`|${expectedCommit}|${targetCommit}|${token}|`)) return
+    if (fs.readFileSync(lockPath, "utf8") !== lockContent) return
+    if (fs.readFileSync(pendingPath, "utf8") !== pendingContent) return
+    fs.unlinkSync(pendingPath)
+    if (fs.readFileSync(lockPath, "utf8") === lockContent) fs.unlinkSync(lockPath)
   } catch {
     // The helper either cleaned its own markers or never created them.
   }
@@ -524,11 +568,12 @@ async function startDetachedUpdater(expectedCommit, targetCommit) {
 
   const token = randomUUID().replaceAll("-", "")
   const updateDirectory = path.join(app.getPath("temp"), "CodexUsageTray")
+  const stateDirectory = ensureUpdateStateDirectory()
   const updaterPath = path.join(updateDirectory, `updater-${token}.exe`)
-  const handoffReadyPath = path.join(app.getPath("userData"), `update-handoff-${token}.ready`)
-  const appReadyPath = path.join(app.getPath("userData"), `update-app-${token}.ready`)
-  const logPath = path.join(app.getPath("userData"), "update.log")
-  const resultPath = path.join(app.getPath("userData"), UPDATE_RESULT_FILE)
+  const handoffReadyPath = path.join(stateDirectory, `update-handoff-${token}.ready`)
+  const appReadyPath = path.join(stateDirectory, `update-app-${token}.ready`)
+  const logPath = path.join(stateDirectory, "update.log")
+  const resultPath = path.join(stateDirectory, UPDATE_RESULT_FILE)
 
   fs.mkdirSync(updateDirectory, { recursive: true })
   for (const readyPath of [handoffReadyPath, appReadyPath]) {
@@ -544,6 +589,7 @@ async function startDetachedUpdater(expectedCommit, targetCommit) {
   const updater = spawn(updaterPath, [
     "--update",
     "--repo", APP_ROOT,
+    "--state-dir", stateDirectory,
     "--parent-pid", String(process.pid),
     "--keeper-pid", String(keeperPid),
     "--expected", expectedCommit,
@@ -570,7 +616,7 @@ async function startDetachedUpdater(expectedCommit, targetCommit) {
     updater.unref()
   } catch (error) {
     updater.kill()
-    removeFailedUpdaterMarkers(updater.pid)
+    removeFailedUpdaterMarkers(updater.pid, expectedCommit, targetCommit, token)
     updateRestartPending = false
     restartWidgetPinning()
     throw error
@@ -578,14 +624,17 @@ async function startDetachedUpdater(expectedCommit, targetCommit) {
 }
 
 function readUpdateResult() {
-  const resultPath = path.join(app.getPath("userData"), UPDATE_RESULT_FILE)
+  const resultPaths = [getUpdateResultPath(), getLegacyUpdatePath(UPDATE_RESULT_FILE)]
+  const resultPath = resultPaths.find((candidate) => fs.existsSync(candidate)) ?? resultPaths[0]
   let result = null
   let malformed = false
 
   try {
     const content = fs.readFileSync(resultPath, "utf8").replace(/^\uFEFF/, "")
     const parsed = JSON.parse(content)
-    if (typeof parsed?.success === "boolean" && typeof parsed.message === "string") result = parsed
+    if (typeof parsed?.success === "boolean" && typeof parsed.message === "string") {
+      result = { ...parsed, resultPath }
+    }
     else malformed = true
   } catch (error) {
     malformed = error.code !== "ENOENT"
@@ -605,7 +654,7 @@ function readUpdateResult() {
 
 function showPendingUpdateResult() {
   const result = readUpdateResult()
-  const repairPending = fs.existsSync(getUpdatePendingPath())
+  const repairPending = hasPendingUpdateState()
   updateRepairNeeded = repairPending
   if (!result) {
     if (repairPending) updateTray()
@@ -614,7 +663,7 @@ function showPendingUpdateResult() {
 
   if (!result.success && !repairPending) {
     try {
-      fs.unlinkSync(path.join(app.getPath("userData"), UPDATE_RESULT_FILE))
+      fs.unlinkSync(result.resultPath)
     } catch {
       // A recovered result can be discarded on a later launch.
     }
@@ -636,14 +685,37 @@ function showPendingUpdateResult() {
   }).then(() => {
     if (result.success || !repairPending) return
     try {
+      const { resultPath, ...persistedResult } = result
       fs.writeFileSync(
-        path.join(app.getPath("userData"), UPDATE_RESULT_FILE),
-        JSON.stringify({ ...result, notified: true }),
+        resultPath,
+        JSON.stringify({ ...persistedResult, notified: true }),
       )
     } catch {
       // The same diagnostic may be shown again if its acknowledgement cannot be persisted.
     }
   }).catch(() => {})
+}
+
+function hasPendingUpdateState() {
+  return fs.existsSync(getUpdatePendingPath()) ||
+    fs.existsSync(path.join(APP_ROOT, ".update.pending")) ||
+    fs.existsSync(getLegacyUpdatePath(UPDATE_PENDING_FILE))
+}
+
+function watchRecoveryCompletion() {
+  if (process.env.CODEX_UPDATE_RECOVERY !== "1") return
+  let attempts = 0
+  clearInterval(updateRecoveryTimer)
+  updateRecoveryTimer = setInterval(() => {
+    attempts += 1
+    if (hasPendingUpdateState() && attempts < 30) return
+    clearInterval(updateRecoveryTimer)
+    updateRecoveryTimer = null
+    if (!hasPendingUpdateState() && updateRepairNeeded) {
+      updateRepairNeeded = false
+      updateTray()
+    }
+  }, 500)
 }
 
 function signalUpdateReady() {
@@ -687,6 +759,65 @@ async function getAvailableUpdateDetails(localCommit, remoteCommit) {
   ].join("\n")
 }
 
+function isTrustedUpdateRemote(remoteUrl) {
+  const normalized = remoteUrl.trim().replace(/\/+$/, "").toLowerCase()
+  return normalized === "https://github.com/naksipayila/codex-tracker.git" ||
+    normalized === "https://github.com/naksipayila/codex-tracker" ||
+    normalized === "git@github.com:naksipayila/codex-tracker.git" ||
+    normalized === "ssh://git@github.com/naksipayila/codex-tracker.git"
+}
+
+function validateJavaScript(source, filename) {
+  try {
+    new vm.Script(source, { filename })
+  } catch (error) {
+    throw new Error(`${filename} failed its syntax check: ${error.message}`)
+  }
+}
+
+async function validateTargetUpdate(targetCommit) {
+  const targetPath = (filePath) => `${targetCommit}:${filePath}`
+  const [mainSource, preloadSource, widgetSource, checkSource, packageSource, lockSource] = await Promise.all([
+    runGit(["show", targetPath("src/main.cjs")]),
+    runGit(["show", targetPath("src/widget-preload.cjs")]),
+    runGit(["show", targetPath("src/widget.html")]),
+    runGit(["show", targetPath("src/check.cjs")]),
+    runGit(["show", targetPath("src/package.json")]),
+    runGit(["show", targetPath("src/package-lock.json")]),
+    runGit(["cat-file", "-e", targetPath("start-widget.exe")]),
+    runGit(["cat-file", "-e", targetPath("src/launcher/Program.cs")]),
+    runGit(["cat-file", "-e", targetPath("src/launcher/build.ps1")]),
+    runGit(["cat-file", "-e", targetPath("src/launcher/build-hash.cjs")]),
+    runGit(["cat-file", "-e", targetPath("src/launcher/icon.ico")]),
+  ])
+
+  validateJavaScript(mainSource, "src/main.cjs")
+  validateJavaScript(preloadSource, "src/widget-preload.cjs")
+  validateJavaScript(checkSource, "src/check.cjs")
+  const inlineScripts = [...widgetSource.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/gi)]
+  if (!inlineScripts.length) throw new Error("src/widget.html does not contain its renderer script.")
+  for (const [index, match] of inlineScripts.entries()) {
+    validateJavaScript(match[1], `src/widget.html script ${index + 1}`)
+  }
+
+  let packageJson
+  let packageLock
+  try {
+    packageJson = JSON.parse(packageSource)
+    packageLock = JSON.parse(lockSource)
+  } catch (error) {
+    throw new Error(`The target package metadata is invalid: ${error.message}`)
+  }
+  if (typeof packageJson?.scripts?.check !== "string") {
+    throw new Error("The target package does not define its verification command.")
+  }
+  const declaredDependencies = JSON.stringify(packageJson.devDependencies ?? {})
+  const lockedDependencies = JSON.stringify(packageLock?.packages?.[""]?.devDependencies ?? {})
+  if (declaredDependencies !== lockedDependencies) {
+    throw new Error("The target package.json and package-lock.json dependencies do not match.")
+  }
+}
+
 async function checkForUpdates(options = {}) {
   if (updateInFlight) return
 
@@ -695,7 +826,8 @@ async function checkForUpdates(options = {}) {
   updateTray()
 
   try {
-    if (!fs.existsSync(path.join(APP_ROOT, ".git"))) {
+    const gitDirectory = path.join(APP_ROOT, ".git")
+    if (!fs.existsSync(gitDirectory) || !fs.statSync(gitDirectory).isDirectory()) {
       throw new Error("Automatic updates require a Git clone of the repository.")
     }
 
@@ -709,7 +841,17 @@ async function checkForUpdates(options = {}) {
       throw new Error("The working tree has local changes. Commit or discard them before updating.")
     }
 
-    await runGit(["fetch", "--quiet", UPDATE_REMOTE])
+    const remoteUrl = await runGit(["remote", "get-url", UPDATE_REMOTE])
+    if (!isTrustedUpdateRemote(remoteUrl)) {
+      throw new Error("Automatic updates require the official Codex Usage Tray GitHub remote.")
+    }
+    await runGit([
+      "fetch",
+      "--quiet",
+      "--no-tags",
+      UPDATE_REMOTE,
+      `refs/heads/${UPDATE_BRANCH}:refs/remotes/${UPDATE_REMOTE}/${UPDATE_BRANCH}`,
+    ])
     const [localCommit, remoteCommit] = await Promise.all([
       runGit(["rev-parse", "HEAD"]),
       runGit(["rev-parse", `refs/remotes/${UPDATE_REMOTE}/${UPDATE_BRANCH}`]),
@@ -738,12 +880,7 @@ async function checkForUpdates(options = {}) {
         throw new Error((ancestry.stderr || ancestry.stdout).trim() || "Could not compare the local and remote branches.")
       }
 
-      const targetMain = await runGit(["show", `${remoteCommit}:src/main.cjs`])
-      try {
-        new vm.Script(targetMain, { filename: "src/main.cjs" })
-      } catch (error) {
-        throw new Error(`The update failed its main-process syntax check: ${error.message}`)
-      }
+      await validateTargetUpdate(remoteCommit)
       updateDetails = await getAvailableUpdateDetails(localCommit, remoteCommit)
     }
 
@@ -1110,6 +1247,7 @@ function createWidget() {
     pinWidgetAboveTaskbar()
     widget.webContents.send("widget:animate-in", shouldAnimateWidget())
     signalUpdateReady()
+    watchRecoveryCompletion()
     scheduleStartupUpdate()
   })
   widget.on("closed", () => {
@@ -1217,7 +1355,7 @@ if (hasSingleInstanceLock) app.whenReady().then(async () => {
     return
   }
   if (process.env.CODEX_UPDATE_RECOVERY === "1") {
-    updateRepairNeeded = fs.existsSync(getUpdatePendingPath())
+    updateRepairNeeded = hasPendingUpdateState()
   }
   updateAtStartup = readUpdatePreferences()
 
@@ -1348,6 +1486,7 @@ app.on("before-quit", () => {
   clearTimeout(widgetResumePositionTimer)
   clearTimeout(zOrderRestartTimer)
   clearTimeout(startupUpdateTimer)
+  clearInterval(updateRecoveryTimer)
   client?.stop()
   loginProcess?.kill()
   zOrderKeeper?.kill()

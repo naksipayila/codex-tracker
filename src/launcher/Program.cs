@@ -1,9 +1,11 @@
 using System;
+using System.ComponentModel;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
@@ -31,24 +33,47 @@ internal static class Program
             return;
         }
 
-        CleanupStaleUpdaterFiles();
+        if (args.Length > 0 && args[0] == "--self-test")
+        {
+            Environment.ExitCode = RunSelfTest(args);
+            return;
+        }
+
+        if (args.Length > 0 && args[0] == "--run-contained")
+        {
+            Environment.ExitCode = RunContainedCommand(args);
+            return;
+        }
+
         var applicationDirectory = NormalizeDirectory(AppDomain.CurrentDomain.BaseDirectory);
         if (IsUpdateInProgress(applicationDirectory)) return;
+        CleanupStaleUpdaterFiles(applicationDirectory);
 
         var projectDirectory = Path.Combine(applicationDirectory, "src");
-        var pendingPath = GetUpdatePendingPath();
+        var pendingPath = GetUpdatePendingPath(applicationDirectory);
         if (!File.Exists(pendingPath))
         {
             var legacyPendingPath = Path.Combine(applicationDirectory, LegacyUpdatePendingFileName);
             if (File.Exists(legacyPendingPath)) pendingPath = legacyPendingPath;
+            else
+            {
+                legacyPendingPath = GetLegacyUpdatePendingPath();
+                if (File.Exists(legacyPendingPath)) pendingPath = legacyPendingPath;
+            }
         }
         if (File.Exists(pendingPath))
         {
+            if (HasRepositoryProcess(applicationDirectory))
+            {
+                try { StartElectron(projectDirectory, null, null, false); }
+                catch { }
+                return;
+            }
             StartPendingUpdate(applicationDirectory, pendingPath);
             return;
         }
 
-        if (!EnsureDependencies(projectDirectory)) return;
+        if (!EnsureDependencies(applicationDirectory, projectDirectory)) return;
 
         try
         {
@@ -58,6 +83,139 @@ internal static class Program
         {
             ShowError("The widget could not be started.", error.Message);
         }
+    }
+
+    private static int RunSelfTest(string[] args)
+    {
+        try
+        {
+            if (args.Length != 4 || args[1] != UpdaterProtocolVersion || args[3].Length < 16) return 2;
+            var applicationDirectory = NormalizeDirectory(AppDomain.CurrentDomain.BaseDirectory);
+            foreach (var relativePath in new[]
+            {
+                Path.Combine("src", "main.cjs"),
+                Path.Combine("src", "widget-preload.cjs"),
+                Path.Combine("src", "widget.html"),
+                Path.Combine("src", "check.cjs"),
+                Path.Combine("src", "package.json"),
+                Path.Combine("src", "package-lock.json"),
+                Path.Combine("src", "launcher", "Program.cs"),
+                Path.Combine("src", "launcher", "build.ps1"),
+                Path.Combine("src", "launcher", "build-hash.cjs"),
+                Path.Combine("src", "launcher", "icon.ico"),
+            })
+            {
+                if (!File.Exists(Path.Combine(applicationDirectory, relativePath))) return 3;
+            }
+            var buildHash = GetEmbeddedLauncherBuildHash();
+            if (buildHash.Length != 64) return 5;
+            WriteTextAtomically(Path.GetFullPath(args[2]), args[3] + "|" + buildHash);
+            return 0;
+        }
+        catch
+        {
+            return 4;
+        }
+    }
+
+    private static string GetEmbeddedLauncherBuildHash()
+    {
+        var attribute = (AssemblyInformationalVersionAttribute)Attribute.GetCustomAttribute(
+            Assembly.GetExecutingAssembly(),
+            typeof(AssemblyInformationalVersionAttribute)
+        );
+        const string prefix = "build-";
+        return attribute != null && attribute.InformationalVersion.StartsWith(prefix, StringComparison.Ordinal)
+            ? attribute.InformationalVersion.Substring(prefix.Length)
+            : "";
+    }
+
+    private static int RunContainedCommand(string[] args)
+    {
+        string errorPath = null;
+        try
+        {
+            var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            for (var index = 1; index < args.Length; index += 2)
+            {
+                if (index + 1 >= args.Length) return ContainedCommandFailureExitCode;
+                values[args[index]] = args[index + 1];
+            }
+            var gatePath = Path.GetFullPath(RequireOption(values, "--gate"));
+            var token = RequireOption(values, "--token");
+            var outputPath = Path.GetFullPath(RequireOption(values, "--stdout"));
+            errorPath = Path.GetFullPath(RequireOption(values, "--stderr"));
+            var fileName = DecodeBase64Option(values, "--file");
+            var arguments = DecodeBase64Option(values, "--arguments");
+            var workingDirectory = DecodeBase64Option(values, "--working-directory");
+            if (token.Length < 16 || !WaitForGate(gatePath, token, CommandGateTimeoutMs))
+            {
+                throw new InvalidOperationException("The contained command gate was not opened.");
+            }
+
+            var output = new CommandOutputCapture();
+            var error = new CommandOutputCapture();
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = fileName,
+                Arguments = arguments,
+                WorkingDirectory = workingDirectory,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+                WindowStyle = ProcessWindowStyle.Hidden,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            int exitCode;
+            using (var process = new Process { StartInfo = startInfo })
+            {
+                process.OutputDataReceived += output.OnDataReceived;
+                process.ErrorDataReceived += error.OnDataReceived;
+                if (!process.Start()) throw new InvalidOperationException("Windows did not start " + fileName + ".");
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+                process.WaitForExit();
+                exitCode = process.ExitCode;
+                if (!WaitForOutputDrain(output, error, CommandOutputDrainTimeoutMs))
+                {
+                    try { process.CancelOutputRead(); } catch { }
+                    try { process.CancelErrorRead(); } catch { }
+                }
+            }
+            WriteTextAtomically(outputPath, output.GetText());
+            WriteTextAtomically(errorPath, error.GetText());
+            return exitCode;
+        }
+        catch (Exception error)
+        {
+            if (!string.IsNullOrEmpty(errorPath))
+            {
+                try { WriteTextAtomically(errorPath, error.ToString()); } catch { }
+            }
+            return ContainedCommandFailureExitCode;
+        }
+    }
+
+    private static string DecodeBase64Option(Dictionary<string, string> values, string name)
+    {
+        return Encoding.UTF8.GetString(Convert.FromBase64String(RequireOption(values, name)));
+    }
+
+    private static bool WaitForGate(string gatePath, string token, int timeoutMs)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        while (DateTime.UtcNow < deadline)
+        {
+            try
+            {
+                if (File.Exists(gatePath) && File.ReadAllText(gatePath).Trim() == token) return true;
+            }
+            catch
+            {
+            }
+            Thread.Sleep(20);
+        }
+        return false;
     }
 
     private static void PinWindow(string windowHandleText, string parentProcessIdText, bool hideInFullscreen)
@@ -233,7 +391,8 @@ internal static class Program
 
     private static bool IsUpdateInProgress(string applicationDirectory)
     {
-        return IsUpdateLockActive(GetUpdateLockPath()) ||
+        return IsUpdateLockActive(GetUpdateLockPath(applicationDirectory)) ||
+            IsUpdateLockActive(GetLegacyUpdateLockPath()) ||
             IsUpdateLockActive(Path.Combine(applicationDirectory, LegacyUpdateLockFileName));
     }
 
@@ -281,25 +440,111 @@ internal static class Program
         return false;
     }
 
-    private static bool EnsureDependencies(string projectDirectory)
+    private static bool EnsureDependencies(string applicationDirectory, string projectDirectory)
     {
-        var electron = GetElectronPath(projectDirectory);
-        if (File.Exists(electron)) return true;
+        var mutexName = "Local\\CodexUsageTray-Dependencies-" + GetRepositoryId(applicationDirectory);
+        using (var mutex = new Mutex(false, mutexName))
+        {
+            var acquired = false;
+            try
+            {
+                try
+                {
+                    acquired = mutex.WaitOne(DependencyTimeoutMs);
+                }
+                catch (AbandonedMutexException)
+                {
+                    acquired = true;
+                }
+                if (!acquired) throw new TimeoutException("Another dependency installation did not finish in time.");
+                if (DependenciesAreReady(projectDirectory)) return true;
 
-        try
-        {
-            var result = RunShellCommand(projectDirectory, "npm install", DependencyTimeoutMs);
-            if (result.ExitCode == 0 && File.Exists(electron)) return true;
-            ShowError(
-                "Widget dependencies could not be installed.",
-                GetCommandError(result, "Make sure Node.js is installed, then try again.")
-            );
-        }
-        catch (Exception error)
-        {
-            ShowError("Widget dependencies could not be installed.", error.Message);
+                CommandResult result = null;
+                for (var attempt = 1; attempt <= 3; attempt += 1)
+                {
+                    result = RunShellCommand(projectDirectory, "npm ci", DependencyTimeoutMs);
+                    if (result.ExitCode == 0 && File.Exists(GetElectronPath(projectDirectory)))
+                    {
+                        WriteDependencyStamp(projectDirectory);
+                        return true;
+                    }
+                    Thread.Sleep(attempt * 1000);
+                }
+                ShowError(
+                    "Widget dependencies could not be installed.",
+                    GetCommandError(result, "Make sure Node.js 22 or newer is installed, then try again.")
+                );
+            }
+            catch (Exception error)
+            {
+                ShowError("Widget dependencies could not be installed.", error.Message);
+            }
+            finally
+            {
+                if (acquired)
+                {
+                    try { mutex.ReleaseMutex(); } catch { }
+                }
+            }
         }
         return false;
+    }
+
+    private static bool DependenciesAreReady(string projectDirectory)
+    {
+        if (!File.Exists(GetElectronPath(projectDirectory))) return false;
+        try
+        {
+            var expected = GetFileSha256(Path.Combine(projectDirectory, "package-lock.json"));
+            var actual = File.ReadAllText(GetDependencyStampPath(projectDirectory)).Trim();
+            return string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void WriteDependencyStamp(string projectDirectory)
+    {
+        WriteTextAtomically(
+            GetDependencyStampPath(projectDirectory),
+            GetFileSha256(Path.Combine(projectDirectory, "package-lock.json"))
+        );
+    }
+
+    private static string GetDependencyStampPath(string projectDirectory)
+    {
+        return Path.Combine(projectDirectory, "node_modules", ".codex-usage-tray-install");
+    }
+
+    private static string GetFileSha256(string filePath)
+    {
+        using (var stream = File.OpenRead(filePath))
+        using (var sha256 = SHA256.Create())
+        {
+            return BitConverter.ToString(sha256.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
+        }
+    }
+
+    private static string GetLauncherBuildHash(string applicationDirectory)
+    {
+        var launcherDirectory = Path.Combine(applicationDirectory, "src", "launcher");
+        var program = NormalizeText(File.ReadAllText(Path.Combine(launcherDirectory, "Program.cs")));
+        var buildScript = NormalizeText(File.ReadAllText(Path.Combine(launcherDirectory, "build.ps1")));
+        var icon = Convert.ToBase64String(File.ReadAllBytes(Path.Combine(launcherDirectory, "icon.ico")));
+        var manifest = program + "\0" + buildScript + "\0" + icon;
+        using (var sha256 = SHA256.Create())
+        {
+            return BitConverter.ToString(
+                sha256.ComputeHash(Encoding.UTF8.GetBytes(manifest))
+            ).Replace("-", "").ToLowerInvariant();
+        }
+    }
+
+    private static string NormalizeText(string value)
+    {
+        return value.Replace("\r\n", "\n").Replace("\r", "\n");
     }
 
     private static Process StartElectron(
@@ -349,25 +594,51 @@ internal static class Program
         Process updater = null;
         try
         {
-            var pending = File.ReadAllText(pendingPath).Trim().Split('|');
-            if (pending.Length != 2 || !IsCommitHash(pending[0]) || !IsCommitHash(pending[1]))
+            var pending = ReadPendingUpdateState(pendingPath, applicationDirectory);
+            if (pending.Phase == "rolled-back" || pending.Phase == "complete")
             {
-                throw new InvalidDataException("The pending update marker is invalid.");
+                var headResult = RunCommand(
+                    "git.exe",
+                    "-C " + QuoteArgument(applicationDirectory) + " rev-parse HEAD",
+                    applicationDirectory,
+                    GitTimeoutMs
+                );
+                if (headResult.ExitCode != 0 || !string.Equals(
+                    headResult.Output.Trim(),
+                    pending.Phase == "complete" ? pending.TargetCommit : pending.ExpectedCommit,
+                    StringComparison.OrdinalIgnoreCase
+                ))
+                {
+                    throw new InvalidOperationException("The completed update marker does not match the repository.");
+                }
+                TryDeleteFile(pendingPath);
+                if (EnsureDependencies(applicationDirectory, projectDirectory))
+                {
+                    StartElectron(projectDirectory, null, null, pending.Phase == "rolled-back");
+                }
+                return;
             }
 
-            var paths = CreateUpdatePaths();
+            var paths = CreateUpdatePaths(applicationDirectory);
             var helper = CopyUpdaterToTemp(paths.Token);
             var startInfo = CreateUpdaterStartInfo(
                 helper,
                 applicationDirectory,
                 Process.GetCurrentProcess().Id,
                 0,
-                pending[0],
-                pending[1],
+                pending.ExpectedCommit,
+                pending.TargetCommit,
+                pending.Phase,
                 paths
             );
             updater = Process.Start(startInfo);
-            if (updater == null || !WaitForTokenFile(paths.HandoffReadyPath, paths.Token, updater, HandoffTimeoutMs))
+            if (updater == null || !WaitForTokenFile(
+                paths.HandoffReadyPath,
+                paths.Token,
+                updater,
+                HandoffTimeoutMs,
+                0
+            ))
             {
                 throw new InvalidOperationException("The update helper did not become ready.");
             }
@@ -386,7 +657,7 @@ internal static class Program
             ShowError("The pending update could not be resumed.", error.Message);
             try
             {
-                if (!updateStillRunning && EnsureDependencies(projectDirectory))
+                if (!updateStillRunning && EnsureDependencies(applicationDirectory, projectDirectory))
                 {
                     StartElectron(projectDirectory, null, null, true);
                 }
@@ -444,15 +715,13 @@ internal static class Program
             Directory.CreateDirectory(Path.GetDirectoryName(options.ResultPath));
             TryDeleteFile(options.HandoffReadyPath);
             TryDeleteFile(options.AppReadyPath);
-            TryDeleteFile(options.ResultPath);
 
-            AppendLog(options.LogPath, "Updater started for " + options.ExpectedCommit + " -> " + options.TargetCommit + ".");
             ownedLockContent = AcquireUpdateLock(options.ApplicationDirectory);
-            ownedPendingContent = options.ExpectedCommit + "|" + options.TargetCommit;
-            File.WriteAllText(
-                GetUpdatePendingPath(),
-                ownedPendingContent,
-                new UTF8Encoding(false)
+            TryDeleteFile(options.ResultPath);
+            AppendLog(options.LogPath, "Updater started for " + options.ExpectedCommit + " -> " + options.TargetCommit + ".");
+            ownedPendingContent = WritePendingUpdateState(
+                options,
+                options.ResumePhase == "rollback" ? "rollback" : "prepared"
             );
             ownsPendingMarker = true;
             File.WriteAllText(options.HandoffReadyPath, options.Token, new UTF8Encoding(false));
@@ -465,7 +734,33 @@ internal static class Program
             TryDeleteFile(options.HandoffReadyPath);
             WaitForRepositoryProcessesToExit(options.ApplicationDirectory, RepositoryExitTimeoutMs);
 
-            ApplyUpdate(options, reportProgress);
+            if (options.ResumePhase == "rollback")
+            {
+                if (!RollbackAndRestart(options, reportProgress, out ownedPendingContent))
+                {
+                    throw new InvalidOperationException("The interrupted rollback could not be resumed.");
+                }
+                DeleteOwnedFileWithRetry(
+                    GetUpdatePendingPath(options.ApplicationDirectory),
+                    ownedPendingContent
+                );
+                DeleteOwnedFileWithRetry(
+                    GetLegacyUpdatePendingPath(),
+                    options.ExpectedCommit + "|" + options.TargetCommit
+                );
+                if (DeleteOwnedFileWithRetry(
+                    GetUpdateLockPath(options.ApplicationDirectory),
+                    ownedLockContent
+                ))
+                {
+                    ownedLockContent = null;
+                }
+                reportProgress("Previous version restored.", 100);
+                Thread.Sleep(600);
+                return;
+            }
+
+            ownedPendingContent = ApplyUpdate(options, reportProgress);
             TryDeleteFile(options.AppReadyPath);
             reportProgress("Restarting widget...", 90);
             launchedApplication = StartElectron(
@@ -474,7 +769,13 @@ internal static class Program
                 options.Token,
                 false
             );
-            if (!WaitForTokenFile(options.AppReadyPath, options.Token, launchedApplication, AppReadyTimeoutMs))
+            if (!WaitForTokenFile(
+                options.AppReadyPath,
+                options.Token,
+                launchedApplication,
+                AppReadyTimeoutMs,
+                AppStabilityWindowMs
+            ))
             {
                 throw new InvalidOperationException("The updated widget did not report that it was ready.");
             }
@@ -483,8 +784,9 @@ internal static class Program
 
             AppendLog(options.LogPath, "The updated widget reported ready.");
             reportProgress("Finishing update...", 96);
+            ownedPendingContent = WritePendingUpdateState(options, "complete");
             if (!DeleteOwnedFileWithRetry(
-                GetUpdatePendingPath(),
+                GetUpdatePendingPath(options.ApplicationDirectory),
                 ownedPendingContent
             ))
             {
@@ -495,11 +797,15 @@ internal static class Program
                 ownsPendingMarker = false;
             }
             DeleteOwnedFileWithRetry(
+                GetLegacyUpdatePendingPath(),
+                options.ExpectedCommit + "|" + options.TargetCommit
+            );
+            DeleteOwnedFileWithRetry(
                 Path.Combine(options.ApplicationDirectory, LegacyUpdatePendingFileName),
-                ownedPendingContent
+                options.ExpectedCommit + "|" + options.TargetCommit
             );
             if (!DeleteOwnedFileWithRetry(
-                GetUpdateLockPath(),
+                GetUpdateLockPath(options.ApplicationDirectory),
                 ownedLockContent
             ))
             {
@@ -518,7 +824,7 @@ internal static class Program
         catch (Exception error)
         {
             reportProgress("Update failed. Restoring widget...", 90);
-            if (options != null)
+            if (options != null && ownedLockContent != null)
             {
                 AppendLog(options.LogPath, "Update failed: " + error);
                 WriteUpdateResult(options, error);
@@ -547,28 +853,25 @@ internal static class Program
             {
                 try
                 {
-                    reportProgress("Restoring widget...", 94);
-                    TryDeleteFile(options.AppReadyPath);
-                    using (var application = StartElectron(
-                        Path.Combine(options.ApplicationDirectory, "src"),
-                        options.AppReadyPath,
-                        options.Token,
-                        true
-                    ))
-                    {
-                        recovered = WaitForTokenFile(
-                            options.AppReadyPath,
-                            options.Token,
-                            application,
-                            RecoveryReadyTimeoutMs
-                        );
-                        if (!recovered) KillProcessTree(application);
-                    }
+                    recovered = RollbackAndRestart(options, reportProgress, out ownedPendingContent);
                     if (recovered)
                     {
-                        TryDeleteFile(options.AppReadyPath);
-                        AppendLog(options.LogPath, "The widget was restarted in recovery mode.");
-                        reportProgress("Widget restored after update failure.", 100);
+                        if (!DeleteOwnedFileWithRetry(
+                            GetUpdatePendingPath(options.ApplicationDirectory),
+                            ownedPendingContent
+                        ))
+                        {
+                            AppendLog(options.LogPath, "Warning: the rolled-back pending marker could not be removed.");
+                        }
+                        DeleteOwnedFileWithRetry(
+                            GetLegacyUpdatePendingPath(),
+                            options.ExpectedCommit + "|" + options.TargetCommit
+                        );
+                        DeleteOwnedFileWithRetry(
+                            Path.Combine(options.ApplicationDirectory, LegacyUpdatePendingFileName),
+                            options.ExpectedCommit + "|" + options.TargetCommit
+                        );
+                        reportProgress("Previous version restored.", 100);
                         Thread.Sleep(600);
                     }
                 }
@@ -580,18 +883,19 @@ internal static class Program
 
             if (options != null)
             {
-                if (ownedLockContent != null)
-                {
-                    DeleteOwnedFileWithRetry(
-                        GetUpdateLockPath(),
-                        ownedLockContent
-                    );
-                }
+                var pendingRemoved = parentExited || !ownsPendingMarker;
                 if (!parentExited && ownsPendingMarker)
                 {
-                    DeleteOwnedFileWithRetry(
-                        GetUpdatePendingPath(),
+                    pendingRemoved = DeleteOwnedFileWithRetry(
+                        GetUpdatePendingPath(options.ApplicationDirectory),
                         ownedPendingContent
+                    );
+                }
+                if (ownedLockContent != null && pendingRemoved)
+                {
+                    DeleteOwnedFileWithRetry(
+                        GetUpdateLockPath(options.ApplicationDirectory),
+                        ownedLockContent
                     );
                 }
             }
@@ -605,11 +909,112 @@ internal static class Program
         }
         finally
         {
-            if (options != null) TryDeleteFile(options.HandoffReadyPath);
+            if (options != null)
+            {
+                TryDeleteFile(options.HandoffReadyPath);
+                TryDeleteFile(options.AppReadyPath);
+            }
         }
     }
 
-    private static void ApplyUpdate(UpdateOptions options, Action<string, int> reportProgress)
+    private static bool RollbackAndRestart(
+        UpdateOptions options,
+        Action<string, int> reportProgress,
+        out string pendingContent
+    )
+    {
+        reportProgress("Restoring previous version...", 92);
+        pendingContent = WritePendingUpdateState(options, "rollback");
+        WaitForRepositoryProcessesToExit(options.ApplicationDirectory, RepositoryExitTimeoutMs);
+
+        var branch = RequireGitSuccess(options, "branch --show-current").Output.Trim();
+        if (!string.Equals(branch, UpdateBranch, StringComparison.Ordinal))
+        {
+            throw new InvalidOperationException("The previous version cannot be restored from another branch.");
+        }
+        var status = RequireGitSuccess(options, "status --porcelain --untracked-files=all").Output.Trim();
+        if (status.Length != 0)
+        {
+            throw new InvalidOperationException(
+                "The previous version was not restored because repository changes were detected and preserved.\n\nChanged paths:\n" + status
+            );
+        }
+
+        var head = RequireGitSuccess(options, "rev-parse HEAD").Output.Trim();
+        var rolledBack = false;
+        if (string.Equals(head, options.TargetCommit, StringComparison.OrdinalIgnoreCase))
+        {
+            RequireGitSuccess(options, "cat-file -e " + options.ExpectedCommit + "^{commit}");
+            RequireGitSuccess(
+                options,
+                "merge-base --is-ancestor " + options.ExpectedCommit + " " + options.TargetCommit
+            );
+            RequireGitSuccess(options, "reset --keep " + options.ExpectedCommit);
+            rolledBack = true;
+        }
+        else if (!string.Equals(head, options.ExpectedCommit, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("The repository moved outside the update transaction; it was not reset.");
+        }
+
+        var restoredHead = RequireGitSuccess(options, "rev-parse HEAD").Output.Trim();
+        if (!string.Equals(restoredHead, options.ExpectedCommit, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Git did not restore the previous commit.");
+        }
+        ValidateLauncher(options);
+
+        var projectDirectory = Path.Combine(options.ApplicationDirectory, "src");
+        if (rolledBack || options.ResumePhase == "rollback")
+        {
+            var installResult = RunShellCommand(projectDirectory, "npm ci", DependencyTimeoutMs);
+            AppendCommandResult(options.LogPath, "rollback npm ci", installResult);
+            if (installResult.ExitCode != 0)
+            {
+                throw new InvalidOperationException(GetCommandError(installResult, "Rollback dependency installation failed."));
+            }
+            WriteDependencyStamp(projectDirectory);
+            var checkResult = RunShellCommand(projectDirectory, "npm run check", CheckTimeoutMs);
+            AppendCommandResult(options.LogPath, "rollback npm run check", checkResult);
+            if (checkResult.ExitCode != 0)
+            {
+                throw new InvalidOperationException(GetCommandError(checkResult, "The restored version failed its verification."));
+            }
+        }
+        var finalStatus = RequireGitSuccess(options, "status --porcelain --untracked-files=all").Output.Trim();
+        if (finalStatus.Length != 0)
+        {
+            throw new InvalidOperationException("The restored repository is not clean.\n\nChanged paths:\n" + finalStatus);
+        }
+
+        pendingContent = WritePendingUpdateState(options, "rolled-back");
+        reportProgress("Restarting previous version...", 97);
+        TryDeleteFile(options.AppReadyPath);
+        using (var application = StartElectron(
+            projectDirectory,
+            options.AppReadyPath,
+            options.Token,
+            true
+        ))
+        {
+            if (!WaitForTokenFile(
+                options.AppReadyPath,
+                options.Token,
+                application,
+                RecoveryReadyTimeoutMs,
+                AppStabilityWindowMs
+            ))
+            {
+                KillProcessTree(application);
+                throw new InvalidOperationException("The restored widget did not remain ready.");
+            }
+        }
+        TryDeleteFile(options.AppReadyPath);
+        AppendLog(options.LogPath, "The previous version was restored and reported ready.");
+        return true;
+    }
+
+    private static string ApplyUpdate(UpdateOptions options, Action<string, int> reportProgress)
     {
         reportProgress("Checking repository...", 25);
         AppendLog(options.LogPath, "Waiting for repository processes to release their files.");
@@ -639,6 +1044,7 @@ internal static class Program
                 "merge-base --is-ancestor " + options.ExpectedCommit + " " + options.TargetCommit
             );
             RequireGitSuccess(options, "merge --ff-only " + options.TargetCommit);
+            WritePendingUpdateState(options, "merged");
         }
         else if (!string.Equals(head, options.TargetCommit, StringComparison.OrdinalIgnoreCase))
         {
@@ -650,6 +1056,7 @@ internal static class Program
         {
             throw new InvalidOperationException("Git did not finish at the expected commit.");
         }
+        ValidateLauncher(options);
 
         var projectDirectory = Path.Combine(options.ApplicationDirectory, "src");
         CommandResult installResult = null;
@@ -659,8 +1066,8 @@ internal static class Program
                 attempt == 1 ? "Installing dependencies..." : "Retrying dependency installation...",
                 60 + (attempt - 1) * 5
             );
-            installResult = RunShellCommand(projectDirectory, "npm install", DependencyTimeoutMs);
-            AppendCommandResult(options.LogPath, "npm install (attempt " + attempt + ")", installResult);
+            installResult = RunShellCommand(projectDirectory, "npm ci", DependencyTimeoutMs);
+            AppendCommandResult(options.LogPath, "npm ci (attempt " + attempt + ")", installResult);
             if (installResult.ExitCode == 0) break;
             Thread.Sleep(attempt * 1000);
         }
@@ -668,6 +1075,8 @@ internal static class Program
         {
             throw new InvalidOperationException(GetCommandError(installResult, "Dependency installation failed."));
         }
+        WriteDependencyStamp(projectDirectory);
+        WritePendingUpdateState(options, "dependencies");
 
         reportProgress("Verifying update...", 82);
         var checkResult = RunShellCommand(projectDirectory, "npm run check", CheckTimeoutMs);
@@ -675,6 +1084,44 @@ internal static class Program
         if (checkResult.ExitCode != 0)
         {
             throw new InvalidOperationException(GetCommandError(checkResult, "The syntax check failed."));
+        }
+        var finalStatus = RequireGitSuccess(options, "status --porcelain --untracked-files=all").Output.Trim();
+        if (finalStatus.Length != 0)
+        {
+            throw new InvalidOperationException(
+                "The update changed tracked or untracked repository files.\n\nChanged paths:\n" + finalStatus
+            );
+        }
+        ValidateLauncher(options);
+        return WritePendingUpdateState(options, "verified");
+    }
+
+    private static void ValidateLauncher(UpdateOptions options)
+    {
+        var launcher = Path.Combine(options.ApplicationDirectory, "start-widget.exe");
+        if (!File.Exists(launcher)) throw new FileNotFoundException("The updated launcher is missing.", launcher);
+        var token = Guid.NewGuid().ToString("N");
+        var readyPath = Path.Combine(options.StateDirectory, "launcher-self-test-" + token + ".ready");
+        TryDeleteFile(readyPath);
+        try
+        {
+            var result = RunCommand(
+                launcher,
+                "--self-test " + UpdaterProtocolVersion + " " + QuoteArgument(readyPath) + " " + token,
+                options.ApplicationDirectory,
+                LauncherSelfTestTimeoutMs
+            );
+            AppendCommandResult(options.LogPath, "start-widget.exe --self-test", result);
+            var response = File.Exists(readyPath) ? File.ReadAllText(readyPath).Trim() : "";
+            var expectedResponse = token + "|" + GetLauncherBuildHash(options.ApplicationDirectory);
+            if (result.ExitCode != 0 || !string.Equals(response, expectedResponse, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException("The updated launcher failed its compatibility self-test.");
+            }
+        }
+        finally
+        {
+            TryDeleteFile(readyPath);
         }
     }
 
@@ -757,6 +1204,32 @@ internal static class Program
         throw new TimeoutException("Repository processes did not release their files in time.");
     }
 
+    private static bool HasRepositoryProcess(string applicationDirectory)
+    {
+        var root = Path.GetFullPath(applicationDirectory).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+        foreach (var process in Process.GetProcesses())
+        {
+            try
+            {
+                if (process.Id == Process.GetCurrentProcess().Id) continue;
+                var executable = process.MainModule == null ? null : process.MainModule.FileName;
+                if (!string.IsNullOrEmpty(executable) &&
+                    Path.GetFullPath(executable).StartsWith(root, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+            }
+            catch
+            {
+            }
+            finally
+            {
+                process.Dispose();
+            }
+        }
+        return false;
+    }
+
     private static string AcquireUpdateLock(string applicationDirectory)
     {
         if (IsUpdateInProgress(applicationDirectory))
@@ -764,7 +1237,7 @@ internal static class Program
             throw new InvalidOperationException("Another update is already running.");
         }
 
-        var lockPath = GetUpdateLockPath();
+        var lockPath = GetUpdateLockPath(applicationDirectory);
         var process = Process.GetCurrentProcess();
         var startedAt = ToUnixMilliseconds(process.StartTime.ToUniversalTime());
         var lockContent = process.Id + "|" + startedAt;
@@ -788,6 +1261,7 @@ internal static class Program
         var options = new UpdateOptions
         {
             ApplicationDirectory = NormalizeDirectory(RequireOption(values, "--repo")),
+            StateDirectory = Path.GetFullPath(RequireOption(values, "--state-dir")),
             ParentProcessId = ParseProcessId(RequireOption(values, "--parent-pid")),
             KeeperProcessId = ParseProcessId(RequireOption(values, "--keeper-pid")),
             ExpectedCommit = RequireOption(values, "--expected"),
@@ -798,6 +1272,10 @@ internal static class Program
             ResultPath = Path.GetFullPath(RequireOption(values, "--result")),
             Token = RequireOption(values, "--token"),
         };
+        string resumePhase;
+        options.ResumePhase = values.TryGetValue("--resume-phase", out resumePhase)
+            ? resumePhase
+            : "prepared";
         if (!Directory.Exists(Path.Combine(options.ApplicationDirectory, ".git")))
         {
             throw new DirectoryNotFoundException("The repository Git directory was not found.");
@@ -807,6 +1285,22 @@ internal static class Program
             throw new ArgumentException("The updater received an invalid commit hash.");
         }
         if (options.Token.Length < 16) throw new ArgumentException("The updater token is invalid.");
+        if (options.ResumePhase != "legacy" && options.ResumePhase != "prepared" &&
+            options.ResumePhase != "merged" && options.ResumePhase != "dependencies" &&
+            options.ResumePhase != "verified" && options.ResumePhase != "launching" &&
+            options.ResumePhase != "rollback")
+        {
+            throw new ArgumentException("The updater resume phase is invalid.");
+        }
+        var expectedStateDirectory = GetUpdateStateDirectory(options.ApplicationDirectory);
+        if (!string.Equals(
+            NormalizeDirectory(options.StateDirectory),
+            NormalizeDirectory(expectedStateDirectory),
+            StringComparison.OrdinalIgnoreCase
+        ))
+        {
+            throw new ArgumentException("The updater state directory does not match the repository.");
+        }
         return options;
     }
 
@@ -817,16 +1311,19 @@ internal static class Program
         int keeperProcessId,
         string expectedCommit,
         string targetCommit,
+        string resumePhase,
         UpdatePaths paths
     )
     {
         var arguments = new StringBuilder();
         AddArgument(arguments, "--update");
         AddOption(arguments, "--repo", applicationDirectory);
+        AddOption(arguments, "--state-dir", paths.StateDirectory);
         AddOption(arguments, "--parent-pid", parentProcessId.ToString());
         AddOption(arguments, "--keeper-pid", keeperProcessId.ToString());
         AddOption(arguments, "--expected", expectedCommit);
         AddOption(arguments, "--target", targetCommit);
+        AddOption(arguments, "--resume-phase", resumePhase);
         AddOption(arguments, "--handoff-ready", paths.HandoffReadyPath);
         AddOption(arguments, "--app-ready", paths.AppReadyPath);
         AddOption(arguments, "--log", paths.LogPath);
@@ -843,21 +1340,18 @@ internal static class Program
         };
     }
 
-    private static UpdatePaths CreateUpdatePaths()
+    private static UpdatePaths CreateUpdatePaths(string applicationDirectory)
     {
         var token = Guid.NewGuid().ToString("N");
-        var userData = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "codex-usage-tray"
-        );
-        Directory.CreateDirectory(userData);
+        var stateDirectory = GetUpdateStateDirectory(applicationDirectory);
         return new UpdatePaths
         {
+            StateDirectory = stateDirectory,
             Token = token,
-            HandoffReadyPath = Path.Combine(userData, "update-handoff-" + token + ".ready"),
-            AppReadyPath = Path.Combine(userData, "update-app-" + token + ".ready"),
-            LogPath = Path.Combine(userData, "update.log"),
-            ResultPath = Path.Combine(userData, "update-result.json"),
+            HandoffReadyPath = Path.Combine(stateDirectory, "update-handoff-" + token + ".ready"),
+            AppReadyPath = Path.Combine(stateDirectory, "update-app-" + token + ".ready"),
+            LogPath = Path.Combine(stateDirectory, "update.log"),
+            ResultPath = Path.Combine(stateDirectory, "update-result.json"),
         };
     }
 
@@ -870,33 +1364,57 @@ internal static class Program
         return helper;
     }
 
-    private static bool WaitForTokenFile(string filePath, string token, Process process, int timeoutMs)
+    private static bool WaitForTokenFile(
+        string filePath,
+        string token,
+        Process process,
+        int timeoutMs,
+        int stabilityWindowMs
+    )
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
         while (DateTime.UtcNow < deadline)
         {
+            if (!IsProcessAlive(process)) return false;
             try
             {
-                if (File.Exists(filePath) && File.ReadAllText(filePath).Trim() == token) return true;
+                if (File.Exists(filePath) && File.ReadAllText(filePath).Trim() == token)
+                {
+                    return stabilityWindowMs <= 0 || WaitForProcessStability(process, stabilityWindowMs);
+                }
             }
             catch
             {
                 // The writer may still be replacing the ready file.
             }
-            if (process != null)
-            {
-                try
-                {
-                    if (process.HasExited) return false;
-                }
-                catch
-                {
-                    return false;
-                }
-            }
             Thread.Sleep(50);
         }
         return false;
+    }
+
+    private static bool WaitForProcessStability(Process process, int stabilityWindowMs)
+    {
+        var deadline = DateTime.UtcNow.AddMilliseconds(stabilityWindowMs);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (!IsProcessAlive(process)) return false;
+            Thread.Sleep(100);
+        }
+        return IsProcessAlive(process);
+    }
+
+    private static bool IsProcessAlive(Process process)
+    {
+        if (process == null) return true;
+        try
+        {
+            process.Refresh();
+            return !process.HasExited;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static CommandResult RunShellCommand(string workingDirectory, string command, int timeoutMs)
@@ -916,45 +1434,92 @@ internal static class Program
         int timeoutMs
     )
     {
-        var output = new StringBuilder();
-        var error = new StringBuilder();
+        var commandDirectory = Path.Combine(Path.GetTempPath(), "CodexUsageTray", "commands");
+        Directory.CreateDirectory(commandDirectory);
+        var token = Guid.NewGuid().ToString("N");
+        var gatePath = Path.Combine(commandDirectory, token + ".gate");
+        var outputPath = Path.Combine(commandDirectory, token + ".stdout");
+        var errorPath = Path.Combine(commandDirectory, token + ".stderr");
+        var wrapperArguments = new StringBuilder();
+        AddArgument(wrapperArguments, "--run-contained");
+        AddOption(wrapperArguments, "--gate", gatePath);
+        AddOption(wrapperArguments, "--token", token);
+        AddOption(wrapperArguments, "--stdout", outputPath);
+        AddOption(wrapperArguments, "--stderr", errorPath);
+        AddOption(wrapperArguments, "--file", Convert.ToBase64String(Encoding.UTF8.GetBytes(fileName)));
+        AddOption(wrapperArguments, "--arguments", Convert.ToBase64String(Encoding.UTF8.GetBytes(arguments)));
+        AddOption(
+            wrapperArguments,
+            "--working-directory",
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(workingDirectory))
+        );
         var startInfo = new ProcessStartInfo
         {
-            FileName = fileName,
-            Arguments = arguments,
-            WorkingDirectory = workingDirectory,
+            FileName = Application.ExecutablePath,
+            Arguments = wrapperArguments.ToString(),
+            WorkingDirectory = Path.GetDirectoryName(Application.ExecutablePath),
             UseShellExecute = false,
             CreateNoWindow = true,
             WindowStyle = ProcessWindowStyle.Hidden,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
         };
-        using (var process = new Process { StartInfo = startInfo })
+
+        try
         {
-            process.OutputDataReceived += delegate(object sender, DataReceivedEventArgs eventArgs)
+            using (var process = new Process { StartInfo = startInfo })
+            using (var job = new KillOnCloseJob())
             {
-                if (eventArgs.Data != null) output.AppendLine(eventArgs.Data);
-            };
-            process.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs eventArgs)
-            {
-                if (eventArgs.Data != null) error.AppendLine(eventArgs.Data);
-            };
-            if (!process.Start()) throw new InvalidOperationException("Windows did not start " + fileName + ".");
-            process.BeginOutputReadLine();
-            process.BeginErrorReadLine();
-            if (!process.WaitForExit(timeoutMs))
-            {
-                KillProcessTree(process);
-                throw new TimeoutException(fileName + " did not finish in time.");
+                if (!process.Start()) throw new InvalidOperationException("Windows did not start the contained command wrapper.");
+                try
+                {
+                    job.Assign(process);
+                }
+                catch
+                {
+                    job.Dispose();
+                    KillProcessTree(process);
+                    throw;
+                }
+                WriteTextAtomically(gatePath, token);
+                var exited = process.WaitForExit(timeoutMs);
+                var exitCode = exited ? process.ExitCode : -1;
+                job.Dispose();
+                if (!exited && !process.WaitForExit(CommandCleanupTimeoutMs))
+                {
+                    KillProcessTree(process);
+                }
+                if (!exited) throw new TimeoutException(fileName + " did not finish in time.");
+                return new CommandResult
+                {
+                    ExitCode = exitCode,
+                    Output = File.Exists(outputPath) ? File.ReadAllText(outputPath) : "",
+                    Error = File.Exists(errorPath)
+                        ? File.ReadAllText(errorPath)
+                        : exitCode == ContainedCommandFailureExitCode
+                            ? "The contained command wrapper failed before producing diagnostics."
+                            : "",
+                };
             }
-            process.WaitForExit();
-            return new CommandResult
-            {
-                ExitCode = process.ExitCode,
-                Output = output.ToString(),
-                Error = error.ToString(),
-            };
         }
+        finally
+        {
+            TryDeleteFile(gatePath);
+            TryDeleteFile(outputPath);
+            TryDeleteFile(errorPath);
+        }
+    }
+
+    private static bool WaitForOutputDrain(
+        CommandOutputCapture output,
+        CommandOutputCapture error,
+        int timeoutMs
+    )
+    {
+        var stopwatch = Stopwatch.StartNew();
+        while ((!output.IsComplete || !error.IsComplete) && stopwatch.ElapsedMilliseconds < timeoutMs)
+        {
+            Thread.Sleep(10);
+        }
+        return output.IsComplete && error.IsComplete;
     }
 
     private static void AppendCommandResult(string logPath, string command, CommandResult result)
@@ -1022,6 +1587,90 @@ internal static class Program
             }
         }
         return escaped.ToString();
+    }
+
+    private static PendingUpdateState ReadPendingUpdateState(
+        string pendingPath,
+        string applicationDirectory
+    )
+    {
+        var content = File.ReadAllText(pendingPath).Trim();
+        var parts = content.Split('|');
+        if (parts.Length == 2 && IsCommitHash(parts[0]) && IsCommitHash(parts[1]))
+        {
+            return new PendingUpdateState
+            {
+                ApplicationDirectory = NormalizeDirectory(applicationDirectory),
+                ExpectedCommit = parts[0],
+                TargetCommit = parts[1],
+                Phase = "legacy",
+            };
+        }
+        var versionTwo = parts.Length == 5 && parts[0] == "v2";
+        var versionThree = parts.Length == 6 && parts[0] == PendingStateVersion;
+        if (!versionTwo && !versionThree)
+        {
+            throw new InvalidDataException("The pending update marker is invalid.");
+        }
+
+        string recordedDirectory;
+        try
+        {
+            recordedDirectory = Encoding.UTF8.GetString(Convert.FromBase64String(parts[1]));
+        }
+        catch (Exception error)
+        {
+            throw new InvalidDataException("The pending update repository identity is invalid.", error);
+        }
+        if (!string.Equals(
+            NormalizeDirectory(recordedDirectory),
+            NormalizeDirectory(applicationDirectory),
+            StringComparison.OrdinalIgnoreCase
+        ))
+        {
+            throw new InvalidDataException("The pending update belongs to another repository.");
+        }
+        var token = versionThree ? parts[4] : "legacy-v2";
+        var phase = versionThree ? parts[5] : parts[4];
+        if (!IsCommitHash(parts[2]) || !IsCommitHash(parts[3]) ||
+            string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(phase))
+        {
+            throw new InvalidDataException("The pending update marker is invalid.");
+        }
+        return new PendingUpdateState
+        {
+            ApplicationDirectory = NormalizeDirectory(applicationDirectory),
+            ExpectedCommit = parts[2],
+            TargetCommit = parts[3],
+            Token = token,
+            Phase = phase,
+        };
+    }
+
+    private static string WritePendingUpdateState(UpdateOptions options, string phase)
+    {
+        var content = PendingStateVersion + "|" +
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(options.ApplicationDirectory)) + "|" +
+            options.ExpectedCommit + "|" + options.TargetCommit + "|" + options.Token + "|" + phase;
+        WriteTextAtomically(GetUpdatePendingPath(options.ApplicationDirectory), content);
+        return content;
+    }
+
+    private static void WriteTextAtomically(string filePath, string content)
+    {
+        var directory = Path.GetDirectoryName(filePath);
+        Directory.CreateDirectory(directory);
+        var temporaryPath = filePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(temporaryPath, content, new UTF8Encoding(false));
+            if (File.Exists(filePath)) File.Replace(temporaryPath, filePath, null);
+            else File.Move(temporaryPath, filePath);
+        }
+        finally
+        {
+            TryDeleteFile(temporaryPath);
+        }
     }
 
     private static bool DeleteOwnedFileWithRetry(string filePath, string expectedContent)
@@ -1136,24 +1785,76 @@ internal static class Program
             : fullPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
     }
 
-    private static string GetUserDataDirectory()
+    private static string GetUpdateStateBaseDirectory()
+    {
+        var overrideDirectory = Environment.GetEnvironmentVariable("CODEX_USAGE_TRAY_USER_DATA");
+        var directory = string.IsNullOrWhiteSpace(overrideDirectory)
+            ? Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "CodexUsageTray"
+            )
+            : Path.GetFullPath(overrideDirectory);
+        Directory.CreateDirectory(directory);
+        return directory;
+    }
+
+    private static string GetRepositoryId(string applicationDirectory)
+    {
+        var normalized = NormalizeDirectory(applicationDirectory);
+        var identity = new StringBuilder(normalized.Length);
+        foreach (var character in normalized)
+        {
+            identity.Append(character >= 'A' && character <= 'Z'
+                ? (char)(character + ('a' - 'A'))
+                : character);
+        }
+        using (var sha256 = SHA256.Create())
+        {
+            var hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(identity.ToString()));
+            var value = BitConverter.ToString(hash).Replace("-", "").ToLowerInvariant();
+            return value.Substring(0, 16);
+        }
+    }
+
+    private static string GetUpdateStateDirectory(string applicationDirectory)
     {
         var directory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "codex-usage-tray"
+            GetUpdateStateBaseDirectory(),
+            UpdateStateDirectoryName,
+            GetRepositoryId(applicationDirectory)
         );
         Directory.CreateDirectory(directory);
         return directory;
     }
 
-    private static string GetUpdateLockPath()
+    private static string GetUpdateLockPath(string applicationDirectory)
     {
-        return Path.Combine(GetUserDataDirectory(), UpdateLockFileName);
+        return Path.Combine(GetUpdateStateDirectory(applicationDirectory), UpdateLockFileName);
     }
 
-    private static string GetUpdatePendingPath()
+    private static string GetUpdatePendingPath(string applicationDirectory)
     {
-        return Path.Combine(GetUserDataDirectory(), UpdatePendingFileName);
+        return Path.Combine(GetUpdateStateDirectory(applicationDirectory), UpdatePendingFileName);
+    }
+
+    private static string GetLegacyUserDataDirectory()
+    {
+        var overrideDirectory = Environment.GetEnvironmentVariable("CODEX_USAGE_TRAY_USER_DATA");
+        if (!string.IsNullOrWhiteSpace(overrideDirectory)) return Path.GetFullPath(overrideDirectory);
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "codex-usage-tray"
+        );
+    }
+
+    private static string GetLegacyUpdateLockPath()
+    {
+        return Path.Combine(GetLegacyUserDataDirectory(), UpdateLockFileName);
+    }
+
+    private static string GetLegacyUpdatePendingPath()
+    {
+        return Path.Combine(GetLegacyUserDataDirectory(), UpdatePendingFileName);
     }
 
     private static void KillProcessTree(Process process)
@@ -1189,23 +1890,60 @@ internal static class Program
         }
     }
 
-    private static void CleanupStaleUpdaterFiles()
+    private static void CleanupStaleUpdaterFiles(string applicationDirectory)
     {
         try
         {
             var directory = Path.Combine(Path.GetTempPath(), "CodexUsageTray");
-            if (!Directory.Exists(directory)) return;
-            foreach (var file in Directory.GetFiles(directory, "updater-*.exe"))
+            if (Directory.Exists(directory))
             {
-                try
+                foreach (var file in Directory.GetFiles(directory, "updater-*.exe"))
                 {
-                    if (File.GetLastWriteTimeUtc(file) < DateTime.UtcNow.AddHours(-1)) File.Delete(file);
-                }
-                catch
-                {
+                    try
+                    {
+                        if (File.GetLastWriteTimeUtc(file) < DateTime.UtcNow.AddHours(-1)) File.Delete(file);
+                    }
+                    catch
+                    {
+                    }
                 }
             }
-        }
+            var stateDirectory = GetUpdateStateDirectory(applicationDirectory);
+            var logPath = Path.Combine(stateDirectory, "update.log");
+            if (File.Exists(logPath) && new FileInfo(logPath).Length > MaximumUpdateLogBytes)
+            {
+                var previousLogPath = Path.Combine(stateDirectory, "update.previous.log");
+                TryDeleteFile(previousLogPath);
+                File.Move(logPath, previousLogPath);
+            }
+            foreach (var pattern in new[] { "update-handoff-*.ready", "update-app-*.ready", "*.tmp" })
+            {
+                foreach (var file in Directory.GetFiles(stateDirectory, pattern))
+                {
+                    try
+                    {
+                        if (File.GetLastWriteTimeUtc(file) < DateTime.UtcNow.AddHours(-1)) File.Delete(file);
+                    }
+                    catch
+                    {
+                        }
+                    }
+                }
+                var commandDirectory = Path.Combine(directory, "commands");
+                if (Directory.Exists(commandDirectory))
+                {
+                    foreach (var file in Directory.GetFiles(commandDirectory))
+                    {
+                        try
+                        {
+                            if (File.GetLastWriteTimeUtc(file) < DateTime.UtcNow.AddHours(-1)) File.Delete(file);
+                        }
+                        catch
+                        {
+                        }
+                    }
+                }
+            }
         catch
         {
         }
@@ -1353,6 +2091,7 @@ internal static class Program
     private sealed class UpdateOptions
     {
         public string ApplicationDirectory;
+        public string StateDirectory;
         public int ParentProcessId;
         public int KeeperProcessId;
         public string ExpectedCommit;
@@ -1362,10 +2101,21 @@ internal static class Program
         public string LogPath;
         public string ResultPath;
         public string Token;
+        public string ResumePhase;
+    }
+
+    private sealed class PendingUpdateState
+    {
+        public string ApplicationDirectory;
+        public string ExpectedCommit;
+        public string TargetCommit;
+        public string Token;
+        public string Phase;
     }
 
     private sealed class UpdatePaths
     {
+        public string StateDirectory;
         public string Token;
         public string HandoffReadyPath;
         public string AppReadyPath;
@@ -1380,8 +2130,140 @@ internal static class Program
         public string Error;
     }
 
+    private sealed class CommandOutputCapture
+    {
+        private readonly StringBuilder value = new StringBuilder();
+        private int complete;
+
+        public void OnDataReceived(object sender, DataReceivedEventArgs eventArgs)
+        {
+            if (eventArgs.Data == null)
+            {
+                Interlocked.Exchange(ref complete, 1);
+                return;
+            }
+            lock (value)
+            {
+                value.AppendLine(eventArgs.Data);
+            }
+        }
+
+        public bool IsComplete
+        {
+            get { return Interlocked.CompareExchange(ref complete, 0, 0) != 0; }
+        }
+
+        public string GetText()
+        {
+            lock (value)
+            {
+                return value.ToString();
+            }
+        }
+    }
+
+    private sealed class KillOnCloseJob : IDisposable
+    {
+        private readonly SafeJobHandle handle;
+
+        public KillOnCloseJob()
+        {
+            handle = CreateJobObject(IntPtr.Zero, null);
+            var error = Marshal.GetLastWin32Error();
+            if (handle == null || handle.IsInvalid)
+            {
+                if (handle != null) handle.Dispose();
+                throw new Win32Exception(error, "Could not create the updater process job.");
+            }
+
+            var information = new JobObjectExtendedLimitInformation();
+            information.BasicLimitInformation.LimitFlags = JobObjectLimitKillOnJobClose;
+            if (!SetInformationJobObject(
+                handle,
+                JobObjectExtendedLimitInformationClass,
+                ref information,
+                (uint)Marshal.SizeOf(typeof(JobObjectExtendedLimitInformation))
+            ))
+            {
+                error = Marshal.GetLastWin32Error();
+                handle.Dispose();
+                throw new Win32Exception(error, "Could not configure the updater process job.");
+            }
+        }
+
+        public void Assign(Process process)
+        {
+            if (!AssignProcessToJobObject(handle, process.Handle))
+            {
+                throw new Win32Exception(
+                    Marshal.GetLastWin32Error(),
+                    "Could not contain " + process.StartInfo.FileName + " in the updater process job."
+                );
+            }
+        }
+
+        public void Dispose()
+        {
+            handle.Dispose();
+        }
+    }
+
+    private sealed class SafeJobHandle : SafeHandle
+    {
+        private SafeJobHandle() : base(IntPtr.Zero, true) { }
+
+        public override bool IsInvalid
+        {
+            get { return handle == IntPtr.Zero || handle == new IntPtr(-1); }
+        }
+
+        protected override bool ReleaseHandle()
+        {
+            return CloseHandle(handle);
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JobObjectBasicLimitInformation
+    {
+        public long PerProcessUserTimeLimit;
+        public long PerJobUserTimeLimit;
+        public uint LimitFlags;
+        public UIntPtr MinimumWorkingSetSize;
+        public UIntPtr MaximumWorkingSetSize;
+        public uint ActiveProcessLimit;
+        public UIntPtr Affinity;
+        public uint PriorityClass;
+        public uint SchedulingClass;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct IoCounters
+    {
+        public ulong ReadOperationCount;
+        public ulong WriteOperationCount;
+        public ulong OtherOperationCount;
+        public ulong ReadTransferCount;
+        public ulong WriteTransferCount;
+        public ulong OtherTransferCount;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JobObjectExtendedLimitInformation
+    {
+        public JobObjectBasicLimitInformation BasicLimitInformation;
+        public IoCounters IoInfo;
+        public UIntPtr ProcessMemoryLimit;
+        public UIntPtr JobMemoryLimit;
+        public UIntPtr PeakProcessMemoryUsed;
+        public UIntPtr PeakJobMemoryUsed;
+    }
+
     private static readonly DateTime UnixEpoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+    private const string UpdaterProtocolVersion = "2";
+    private const string PendingStateVersion = "v3";
     private const string UpdateBranch = "main";
+    private const string UpdateStateDirectoryName = "updates";
     private const string UpdateLockFileName = "update.lock";
     private const string UpdatePendingFileName = "update.pending";
     private const string LegacyUpdateLockFileName = ".update.lock";
@@ -1389,11 +2271,20 @@ internal static class Program
     private const int HandoffTimeoutMs = 10000;
     private const int ParentExitTimeoutMs = 60000;
     private const int RepositoryExitTimeoutMs = 30000;
-    private const int AppReadyTimeoutMs = 30000;
-    private const int RecoveryReadyTimeoutMs = 15000;
+    private const int AppReadyTimeoutMs = 60000;
+    private const int RecoveryReadyTimeoutMs = 60000;
+    private const int AppStabilityWindowMs = 3000;
+    private const int LauncherSelfTestTimeoutMs = 10000;
     private const int GitTimeoutMs = 120000;
     private const int DependencyTimeoutMs = 300000;
     private const int CheckTimeoutMs = 60000;
+    private const int CommandCleanupTimeoutMs = 5000;
+    private const int CommandOutputDrainTimeoutMs = 5000;
+    private const int CommandGateTimeoutMs = 10000;
+    private const int ContainedCommandFailureExitCode = 253;
+    private const long MaximumUpdateLogBytes = 4L * 1024L * 1024L;
+    private const uint JobObjectLimitKillOnJobClose = 0x00002000;
+    private const int JobObjectExtendedLimitInformationClass = 9;
 
     private static readonly IntPtr HwndTopmost = new IntPtr(-1);
     private static IntPtr pinnedWindow;
@@ -1420,6 +2311,31 @@ internal static class Program
     private const uint MonitorDefaultToNearest = 0x00000002;
     private const int SwHide = 0;
     private const int SwShowNoActivate = 4;
+
+    [DllImport(
+        "kernel32.dll",
+        EntryPoint = "CreateJobObjectW",
+        CharSet = CharSet.Unicode,
+        SetLastError = true
+    )]
+    private static extern SafeJobHandle CreateJobObject(IntPtr jobAttributes, string name);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetInformationJobObject(
+        SafeJobHandle job,
+        int informationClass,
+        ref JobObjectExtendedLimitInformation information,
+        uint informationLength
+    );
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool AssignProcessToJobObject(SafeJobHandle job, IntPtr process);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CloseHandle(IntPtr handle);
 
     private delegate void WinEventDelegate(
         IntPtr hook,
