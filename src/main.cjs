@@ -59,16 +59,7 @@ const launchedByUpdater = process.env.CODEX_UPDATE_LAUNCH === "1"
 function createTrayIcon() {
   const customIcon = nativeImage.createFromPath(path.join(__dirname, "icon.png"))
   if (!customIcon.isEmpty()) {
-    const { width, height } = customIcon.getSize()
-    const side = Math.floor(Math.min(width * 0.84, height * 0.98))
-    return customIcon
-      .crop({
-        x: Math.floor((width - side) / 2),
-        y: Math.floor((height - side) / 2),
-        width: side,
-        height: side,
-      })
-      .resize({ width: 32, height: 32, quality: "best" })
+    return customIcon.resize({ width: 32, height: 32, quality: "best" })
   }
 
   const size = 16
