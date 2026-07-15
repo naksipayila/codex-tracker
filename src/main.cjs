@@ -835,7 +835,6 @@ function updateTray() {
   ]
 
   tray.setContextMenu(Menu.buildFromTemplate(menuItems))
-  tray.setToolTip("")
   updateWidget()
 }
 
