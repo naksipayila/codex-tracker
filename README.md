@@ -34,7 +34,7 @@ Automatic updates require a Git clone on a clean `main` branch with the `origin`
 | Action | What it does |
 | --- | --- |
 | **Show widget** | Shows the taskbar widget if it was hidden. |
-| **Check update at startup** | Enabled by default. Silently checks `origin/main` when the widget starts and immediately applies an available update. |
+| **Check update at startup** | Enabled by default. Silently checks `origin/main` when the widget starts, then shows the available commit summaries and asks before updating. |
 | **Repair update** | Appears when a running app detects that dependency installation or verification still needs to finish. |
 | **Quit** | Stops the widget and tray app. |
 

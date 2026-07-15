@@ -19,6 +19,7 @@ const UPDATE_REMOTE = "origin"
 const UPDATE_RESULT_FILE = "update-result.json"
 const UPDATE_CHECK_TIMEOUT_MS = 60_000
 const UPDATE_HANDOFF_TIMEOUT_MS = 10_000
+const MAX_UPDATE_CHANGES = 12
 const WIDGET_EXPANDED_WIDTH = 380
 const WIDGET_COLLAPSED_WIDTH = 190
 const WIDGET_RESIZE_DURATION_MS = 180
@@ -660,10 +661,42 @@ function signalUpdateReady() {
   }
 }
 
+async function getAvailableUpdateDetails(localCommit, remoteCommit) {
+  const log = await runGit([
+    "log",
+    "--reverse",
+    "--format=%h%x09%s",
+    `${localCommit}..${remoteCommit}`,
+  ])
+  const changes = log.split(/\r?\n/).filter(Boolean).map((line) => {
+    const separator = line.indexOf("\t")
+    const hash = separator === -1 ? "" : line.slice(0, separator)
+    const rawSubject = separator === -1 ? line : line.slice(separator + 1)
+    const subject = rawSubject.replace(/[\x00-\x1f\x7f]/gi, " ").replace(/\s+/g, " ").trim()
+    const label = subject.length > 160 ? `${subject.slice(0, 157)}...` : subject || "Untitled change"
+    return `- ${label}${hash ? ` (${hash})` : ""}`
+  })
+  const visibleChanges = changes.slice(-MAX_UPDATE_CHANGES)
+  if (changes.length > visibleChanges.length) {
+    visibleChanges.unshift(`- ... ${changes.length - visibleChanges.length} earlier commits not shown`)
+  }
+  if (!visibleChanges.length) visibleChanges.push("- No commit descriptions were provided.")
+
+  return [
+    `Current: ${localCommit.slice(0, 7)}`,
+    `Available: ${remoteCommit.slice(0, 7)}`,
+    "",
+    "What's new:",
+    ...visibleChanges,
+    "",
+    "The application will close, install dependencies, run its syntax check, and restart.",
+  ].join("\n")
+}
+
 async function checkForUpdates(options = {}) {
   if (updateInFlight) return
 
-  const automatic = options.automatic === true
+  const startup = options.startup === true
   updateInFlight = true
   updateTray()
 
@@ -689,7 +722,7 @@ async function checkForUpdates(options = {}) {
     ])
 
     if (localCommit === remoteCommit && !updateRepairNeeded) {
-      if (!automatic) {
+      if (!startup) {
         await dialog.showMessageBox({
           type: "info",
           title: "Codex Usage Tray",
@@ -702,6 +735,7 @@ async function checkForUpdates(options = {}) {
       return
     }
 
+    let updateDetails
     if (localCommit !== remoteCommit) {
       const ancestry = await runGitCommand(["merge-base", "--is-ancestor", localCommit, remoteCommit])
       if (ancestry.code === 1) {
@@ -717,29 +751,28 @@ async function checkForUpdates(options = {}) {
       } catch (error) {
         throw new Error(`The update failed its main-process syntax check: ${error.message}`)
       }
+      updateDetails = await getAvailableUpdateDetails(localCommit, remoteCommit)
     }
 
-    if (!automatic) {
-      const repairing = localCommit === remoteCommit
-      const confirmation = await dialog.showMessageBox({
-        type: "question",
-        title: "Codex Usage Tray",
-        message: repairing ? "The previous update needs repair." : "An update is available.",
-        detail: repairing
-          ? "The application will close, reinstall dependencies, run its syntax check, and restart."
-          : `${localCommit.slice(0, 7)} -> ${remoteCommit.slice(0, 7)}\n\nThe application will close, install dependencies, run its syntax check, and restart.`,
-        buttons: [repairing ? "Repair and restart" : "Update and restart", "Cancel"],
-        defaultId: 0,
-        cancelId: 1,
-        noLink: true,
-      })
-      if (confirmation.response !== 0) return
-    }
+    const repairing = localCommit === remoteCommit
+    const confirmation = await dialog.showMessageBox({
+      type: "question",
+      title: "Codex Usage Tray",
+      message: repairing ? "The previous update needs repair." : "An update is available.",
+      detail: repairing
+        ? "The application will close, reinstall dependencies, run its syntax check, and restart."
+        : updateDetails,
+      buttons: [repairing ? "Repair and restart" : "Update and restart", "Not now"],
+      defaultId: 1,
+      cancelId: 1,
+      noLink: true,
+    })
+    if (confirmation.response !== 0) return
 
     await startDetachedUpdater(localCommit, remoteCommit)
     app.quit()
   } catch (error) {
-    if (!automatic) {
+    if (!startup) {
       await dialog.showMessageBox({
         type: "error",
         title: "Codex Usage Tray",
@@ -760,7 +793,7 @@ function scheduleStartupUpdate() {
   startupUpdateScheduled = true
   startupUpdateTimer = setTimeout(() => {
     startupUpdateTimer = null
-    if (!quitting && updateAtStartup) checkForUpdates({ automatic: true })
+    if (!quitting && updateAtStartup) checkForUpdates({ startup: true })
   }, 500)
 }
 
