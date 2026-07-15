@@ -400,6 +400,36 @@ internal static class Program
 
     private static void RunUpdater(string[] args)
     {
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+        using (var progress = new UpdateProgressForm())
+        {
+            progress.Shown += delegate
+            {
+                var worker = new Thread(delegate()
+                {
+                    try
+                    {
+                        RunUpdaterCore(args, progress.ReportProgress, progress.ShowFailure);
+                    }
+                    finally
+                    {
+                        progress.CloseWhenFinished();
+                    }
+                });
+                worker.IsBackground = true;
+                worker.Start();
+            };
+            Application.Run(progress);
+        }
+    }
+
+    private static void RunUpdaterCore(
+        string[] args,
+        Action<string, int> reportProgress,
+        Action<string, string> showFailure
+    )
+    {
         UpdateOptions options = null;
         bool parentExited = false;
         bool ownsPendingMarker = false;
@@ -408,6 +438,7 @@ internal static class Program
         Process launchedApplication = null;
         try
         {
+            reportProgress("Preparing update...", 5);
             options = ParseUpdateOptions(args);
             Directory.CreateDirectory(Path.GetDirectoryName(options.LogPath));
             Directory.CreateDirectory(Path.GetDirectoryName(options.ResultPath));
@@ -427,14 +458,16 @@ internal static class Program
             File.WriteAllText(options.HandoffReadyPath, options.Token, new UTF8Encoding(false));
             AppendLog(options.LogPath, "Handoff ready; waiting for the old application to exit.");
 
+            reportProgress("Closing current widget...", 15);
             WaitForProcessExit(options.ParentProcessId, ParentExitTimeoutMs, "Electron");
             parentExited = true;
             WaitForProcessExit(options.KeeperProcessId, ParentExitTimeoutMs, "widget pinning helper");
             TryDeleteFile(options.HandoffReadyPath);
             WaitForRepositoryProcessesToExit(options.ApplicationDirectory, RepositoryExitTimeoutMs);
 
-            ApplyUpdate(options);
+            ApplyUpdate(options, reportProgress);
             TryDeleteFile(options.AppReadyPath);
+            reportProgress("Restarting widget...", 90);
             launchedApplication = StartElectron(
                 Path.Combine(options.ApplicationDirectory, "src"),
                 options.AppReadyPath,
@@ -449,6 +482,7 @@ internal static class Program
             launchedApplication = null;
 
             AppendLog(options.LogPath, "The updated widget reported ready.");
+            reportProgress("Finishing update...", 96);
             if (!DeleteOwnedFileWithRetry(
                 GetUpdatePendingPath(),
                 ownedPendingContent
@@ -478,9 +512,12 @@ internal static class Program
             TryDeleteFile(options.AppReadyPath);
             TryDeleteFile(options.ResultPath);
             AppendLog(options.LogPath, "Update completed successfully.");
+            reportProgress("Update complete.", 100);
+            Thread.Sleep(600);
         }
         catch (Exception error)
         {
+            reportProgress("Update failed. Restoring widget...", 90);
             if (options != null)
             {
                 AppendLog(options.LogPath, "Update failed: " + error);
@@ -510,6 +547,7 @@ internal static class Program
             {
                 try
                 {
+                    reportProgress("Restoring widget...", 94);
                     TryDeleteFile(options.AppReadyPath);
                     using (var application = StartElectron(
                         Path.Combine(options.ApplicationDirectory, "src"),
@@ -530,6 +568,8 @@ internal static class Program
                     {
                         TryDeleteFile(options.AppReadyPath);
                         AppendLog(options.LogPath, "The widget was restarted in recovery mode.");
+                        reportProgress("Widget restored after update failure.", 100);
+                        Thread.Sleep(600);
                     }
                 }
                 catch (Exception recoveryError)
@@ -557,7 +597,7 @@ internal static class Program
             }
             if (!recovered)
             {
-                ShowError(
+                showFailure(
                     "The application could not be updated.",
                     error.Message + (options == null ? "" : "\n\nLog: " + options.LogPath)
                 );
@@ -569,8 +609,9 @@ internal static class Program
         }
     }
 
-    private static void ApplyUpdate(UpdateOptions options)
+    private static void ApplyUpdate(UpdateOptions options, Action<string, int> reportProgress)
     {
+        reportProgress("Checking repository...", 25);
         AppendLog(options.LogPath, "Waiting for repository processes to release their files.");
         WaitForRepositoryProcessesToExit(options.ApplicationDirectory, RepositoryExitTimeoutMs);
 
@@ -591,6 +632,7 @@ internal static class Program
         var head = RequireGitSuccess(options, "rev-parse HEAD").Output.Trim();
         if (string.Equals(head, options.ExpectedCommit, StringComparison.OrdinalIgnoreCase))
         {
+            reportProgress("Applying update files...", 45);
             RequireGitSuccess(options, "cat-file -e " + options.TargetCommit + "^{commit}");
             RequireGitSuccess(
                 options,
@@ -613,6 +655,10 @@ internal static class Program
         CommandResult installResult = null;
         for (var attempt = 1; attempt <= 3; attempt += 1)
         {
+            reportProgress(
+                attempt == 1 ? "Installing dependencies..." : "Retrying dependency installation...",
+                60 + (attempt - 1) * 5
+            );
             installResult = RunShellCommand(projectDirectory, "npm install", DependencyTimeoutMs);
             AppendCommandResult(options.LogPath, "npm install (attempt " + attempt + ")", installResult);
             if (installResult.ExitCode == 0) break;
@@ -623,6 +669,7 @@ internal static class Program
             throw new InvalidOperationException(GetCommandError(installResult, "Dependency installation failed."));
         }
 
+        reportProgress("Verifying update...", 82);
         var checkResult = RunShellCommand(projectDirectory, "npm run check", CheckTimeoutMs);
         AppendCommandResult(options.LogPath, "npm run check", checkResult);
         if (checkResult.ExitCode != 0)
@@ -792,7 +839,7 @@ internal static class Program
             WorkingDirectory = applicationDirectory,
             UseShellExecute = false,
             CreateNoWindow = true,
-            WindowStyle = ProcessWindowStyle.Hidden,
+            WindowStyle = ProcessWindowStyle.Normal,
         };
     }
 
@@ -1172,6 +1219,135 @@ internal static class Program
             MessageBoxButtons.OK,
             MessageBoxIcon.Error
         );
+    }
+
+    private sealed class UpdateProgressForm : Form
+    {
+        private readonly Label statusLabel;
+        private readonly Label percentageLabel;
+        private readonly ProgressBar progressBar;
+        private bool finished;
+
+        public UpdateProgressForm()
+        {
+            Text = "Codex Usage Tray Update";
+            Width = 390;
+            Height = 155;
+            AutoScaleMode = AutoScaleMode.Dpi;
+            FormBorderStyle = FormBorderStyle.FixedDialog;
+            StartPosition = FormStartPosition.CenterScreen;
+            MaximizeBox = false;
+            MinimizeBox = false;
+            ControlBox = false;
+            ShowInTaskbar = true;
+            TopMost = true;
+
+            var layout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                Padding = new Padding(18),
+                ColumnCount = 1,
+                RowCount = 3,
+            };
+            layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+
+            statusLabel = new Label
+            {
+                Text = "Preparing update...",
+                AutoSize = true,
+                AutoEllipsis = true,
+                Dock = DockStyle.Fill,
+                Padding = new Padding(0, 0, 0, 10),
+            };
+            progressBar = new ProgressBar
+            {
+                Minimum = 0,
+                Maximum = 100,
+                Value = 5,
+                Style = ProgressBarStyle.Continuous,
+                Dock = DockStyle.Top,
+                Height = 20,
+            };
+            percentageLabel = new Label
+            {
+                Text = "5%",
+                AutoSize = true,
+                Dock = DockStyle.Fill,
+                Padding = new Padding(0, 8, 0, 0),
+            };
+
+            layout.Controls.Add(statusLabel, 0, 0);
+            layout.Controls.Add(progressBar, 0, 1);
+            layout.Controls.Add(percentageLabel, 0, 2);
+            Controls.Add(layout);
+        }
+
+        public void ReportProgress(string status, int percent)
+        {
+            RunOnUiThread(delegate
+            {
+                var safePercent = Math.Max(0, Math.Min(100, percent));
+                statusLabel.Text = status;
+                progressBar.Value = safePercent;
+                percentageLabel.Text = safePercent + "%";
+            }, false);
+        }
+
+        public void ShowFailure(string message, string detail)
+        {
+            RunOnUiThread(delegate
+            {
+                MessageBox.Show(
+                    this,
+                    message + (string.IsNullOrEmpty(detail) ? "" : "\n\n" + detail),
+                    "Codex Usage Tray",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error
+                );
+            }, true);
+        }
+
+        public void CloseWhenFinished()
+        {
+            RunOnUiThread(delegate
+            {
+                finished = true;
+                TopMost = false;
+                Close();
+            }, false);
+        }
+
+        protected override void OnFormClosing(FormClosingEventArgs eventArgs)
+        {
+            if (!finished && eventArgs.CloseReason == CloseReason.UserClosing)
+            {
+                eventArgs.Cancel = true;
+                return;
+            }
+            base.OnFormClosing(eventArgs);
+        }
+
+        private void RunOnUiThread(MethodInvoker action, bool wait)
+        {
+            try
+            {
+                if (IsDisposed || Disposing) return;
+                if (!InvokeRequired)
+                {
+                    action();
+                    return;
+                }
+                if (wait) Invoke(action);
+                else BeginInvoke(action);
+            }
+            catch (InvalidOperationException)
+            {
+                // The updater is already closing its progress window.
+            }
+        }
     }
 
     private sealed class UpdateOptions

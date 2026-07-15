@@ -556,7 +556,7 @@ async function startDetachedUpdater(expectedCommit, targetCommit) {
   ], {
     cwd: APP_ROOT,
     detached: true,
-    windowsHide: true,
+    windowsHide: false,
     stdio: "ignore",
   })
 
@@ -665,16 +665,13 @@ async function getAvailableUpdateDetails(localCommit, remoteCommit) {
   const log = await runGit([
     "log",
     "--reverse",
-    "--format=%h%x09%s",
+    "--format=%s",
     `${localCommit}..${remoteCommit}`,
   ])
   const changes = log.split(/\r?\n/).filter(Boolean).map((line) => {
-    const separator = line.indexOf("\t")
-    const hash = separator === -1 ? "" : line.slice(0, separator)
-    const rawSubject = separator === -1 ? line : line.slice(separator + 1)
-    const subject = rawSubject.replace(/[\x00-\x1f\x7f]/gi, " ").replace(/\s+/g, " ").trim()
+    const subject = line.replace(/[\x00-\x1f\x7f]/gi, " ").replace(/\s+/g, " ").trim()
     const label = subject.length > 160 ? `${subject.slice(0, 157)}...` : subject || "Untitled change"
-    return `- ${label}${hash ? ` (${hash})` : ""}`
+    return `- ${label}`
   })
   const visibleChanges = changes.slice(-MAX_UPDATE_CHANGES)
   if (changes.length > visibleChanges.length) {
@@ -683,9 +680,6 @@ async function getAvailableUpdateDetails(localCommit, remoteCommit) {
   if (!visibleChanges.length) visibleChanges.push("- No commit descriptions were provided.")
 
   return [
-    `Current: ${localCommit.slice(0, 7)}`,
-    `Available: ${remoteCommit.slice(0, 7)}`,
-    "",
     "What's new:",
     ...visibleChanges,
     "",
@@ -727,7 +721,6 @@ async function checkForUpdates(options = {}) {
           type: "info",
           title: "Codex Usage Tray",
           message: "Codex Usage Tray is up to date.",
-          detail: `${UPDATE_BRANCH} is at ${localCommit.slice(0, 7)}.`,
           buttons: ["OK"],
           noLink: true,
         })
