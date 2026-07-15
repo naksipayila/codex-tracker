@@ -1,0 +1,69 @@
+name: Release gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-2022
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: src/package-lock.json
+
+      - name: Install dependencies
+        shell: pwsh
+        run: npm ci --prefix src
+
+      - name: Verify application sources
+        shell: pwsh
+        run: npm --prefix src run check
+
+      - name: Compile launcher source
+        shell: pwsh
+        run: |
+          $output = Join-Path $env:RUNNER_TEMP "start-widget-source-check.exe"
+          .\src\launcher\build.ps1 -OutputPath $output
+
+      - name: Verify tracked launcher protocol
+        shell: pwsh
+        run: |
+          $token = [guid]::NewGuid().ToString("N")
+          $ready = Join-Path $env:RUNNER_TEMP "launcher-self-test-$token.ready"
+          $process = Start-Process -FilePath .\start-widget.exe -ArgumentList "--self-test", "2", $ready, $token -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "The tracked launcher failed its updater protocol self-test." }
+          $buildHash = (& node .\src\launcher\build-hash.cjs).Trim()
+          if (!(Test-Path -LiteralPath $ready) -or (Get-Content -LiteralPath $ready -Raw).Trim() -ne "$token|$buildHash") {
+            throw "The tracked launcher did not return the updater protocol nonce."
+          }
+          Remove-Item -LiteralPath $ready -Force
+
+      - name: Run updater fault-injection tests
+        shell: pwsh
+        run: |
+          .\tests\updater\Invoke-UpdaterTests.ps1 `
+            -SourceRoot $env:GITHUB_WORKSPACE `
+            -ScratchRoot (Join-Path $env:RUNNER_TEMP "codex-updater-tests")
+
+      - name: Assert clean checkout
+        shell: pwsh
+        run: |
+          git diff --exit-code -- .
+          git diff --cached --exit-code -- .
+          $status = git status --porcelain=v1 --untracked-files=all
+          if ($status) {
+            $status
+            throw "Release verification changed the checkout."
+          }

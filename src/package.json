@@ -6,7 +6,7 @@
   "main": "main.cjs",
   "scripts": {
     "start": "electron .",
-    "check": "node --check main.cjs"
+    "check": "node check.cjs"
   },
   "devDependencies": {
     "electron": "^40.2.0"
