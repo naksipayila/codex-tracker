@@ -19,7 +19,15 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
+          dotnet-version: "8.0.422"
           global-json-file: global.json
+
+      - name: Verify .NET SDK
+        shell: pwsh
+        run: |
+          if ((dotnet --version).Trim() -ne "8.0.422") {
+            throw "Release builds require .NET SDK 8.0.422."
+          }
 
       - name: Restore native application
         shell: pwsh

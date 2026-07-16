@@ -9,6 +9,10 @@ Windows taskbar widget for viewing your Codex 5-hour and weekly usage limits.
 3. Right-click the widget and select **Sign in to Codex**. Complete the official `codex login` flow.
 4. Your limits appear in the widget after sign-in. Choose **Refresh** from its menu to update them immediately.
 
+## Updates
+
+Automatic updates require a Git clone of this repository on the `main` branch with no local changes. A direct download of `Codex Tracker.exe` runs normally, but must be updated by replacing the EXE manually.
+
 ## Controls
 
 - Drag the widget to reposition it on the taskbar.
