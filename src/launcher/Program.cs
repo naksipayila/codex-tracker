@@ -1149,7 +1149,7 @@ internal static class Program
             var response = File.Exists(readyPath) ? File.ReadAllText(readyPath).Trim() : "";
             var separator = response.IndexOf('|');
             if (result.ExitCode != 0 || separator <= 0 ||
-                !string.Equals(response[..separator], token, StringComparison.Ordinal) ||
+                !string.Equals(response.Substring(0, separator), token, StringComparison.Ordinal) ||
                 response.Length - separator - 1 != 64)
             {
                 throw new InvalidOperationException("The release launcher failed its compatibility self-test.");
@@ -1200,8 +1200,10 @@ internal static class Program
         }
     }
 
-    private static string GetPackageBackupPath(UpdateOptions options) =>
-        Path.Combine(options.ApplicationDirectory, ".CodexTracker.exe.update-backup");
+    private static string GetPackageBackupPath(UpdateOptions options)
+    {
+        return Path.Combine(options.ApplicationDirectory, ".CodexTracker.exe.update-backup");
+    }
 
     private static string ComputeFileSha256(string path)
     {
@@ -1408,8 +1410,9 @@ internal static class Program
             options.PackageSha256 = RequireOption(values, "--package-sha256").ToLowerInvariant();
             options.ExpectedExecutableSha256 = RequireOption(values, "--expected-exe-sha256").ToLowerInvariant();
             options.TargetVersion = RequireOption(values, "--target-version");
+            Version packageVersion;
             if (!IsSha256(options.PackageSha256) || !IsSha256(options.ExpectedExecutableSha256) ||
-                !Version.TryParse(options.TargetVersion, out var packageVersion) || packageVersion <= new Version(0, 0))
+                !Version.TryParse(options.TargetVersion, out packageVersion) || packageVersion <= new Version(0, 0))
             {
                 throw new ArgumentException("The package updater received invalid release metadata.");
             }
@@ -1815,8 +1818,9 @@ internal static class Program
         }
         if (versionFour)
         {
+            Version packageVersion;
             if (parts[2] != "package" || !IsSha256(parts[3]) || !IsSha256(parts[6]) ||
-                !Version.TryParse(parts[4], out var packageVersion) || packageVersion <= new Version(0, 0) ||
+                !Version.TryParse(parts[4], out packageVersion) || packageVersion <= new Version(0, 0) ||
                 string.IsNullOrWhiteSpace(parts[5]) || string.IsNullOrWhiteSpace(parts[8]))
             {
                 throw new InvalidDataException("The package update marker is invalid.");
