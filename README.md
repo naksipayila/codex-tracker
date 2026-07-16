@@ -1,33 +1,29 @@
-<h1 align="center">Codex Tracker</h1>
+# Codex Tracker
 
-Windows taskbar widget for viewing your Latrix 6-hour and weekly usage limits.
+Windows taskbar widget for Latrix 6-hour and weekly usage limits.
 
-## Usage
+## Install
 
-1. Download and run `CodexTracker.exe` on Windows x64. The release installs itself for the current user under `%LOCALAPPDATA%\Programs\Codex Tracker` and relaunches from there.
-2. Add the Latrix API key to the OpenCode global config at `~/.config/opencode/opencode.json`, under `provider.latrix.options.apiKey`.
-3. Your Latrix limits appear in the widget automatically.
+Download and run `CodexTracker.exe` on Windows x64. Releases install for the current user under `%LOCALAPPDATA%\Programs\Codex Tracker`.
 
-## Updates
+Add the API key to `~/.config/opencode/opencode.json`:
 
-Release packages publish a self-contained `CodexTracker.exe` from version tags. Downloaded releases install under `%LOCALAPPDATA%\Programs\Codex Tracker`; Git-clone installations remain in place, use the repository updater, and require the `main` branch with no local changes.
+```json
+{"provider":{"latrix":{"options":{"apiKey":"..."}}}}
+```
 
-Latrix usage reads the API key from the OpenCode global config at `~/.config/opencode/opencode.json`, under `provider.latrix.options.apiKey`. Codex Tracker does not ask for, copy, or store this key.
+The key is read from that file and is never copied or stored by Codex Tracker. Release installs update automatically; Git clones update in place on a clean `main` checkout.
+
+## Controls
+
+- Drag the widget to reposition it.
+- Use **Launch at Windows startup** for automatic startup.
+- Use **Hide widget** or **Quit** from the widget or tray menu.
 
 ## Development
-
-Build and verification commands are implemented in the C# tooling project:
 
 ```text
 dotnet run --project tools\CodexTracker.Tooling\CodexTracker.Tooling.csproj --configuration Release -- build --output .\CodexTracker.exe
 dotnet run --project tools\CodexTracker.Tooling\CodexTracker.Tooling.csproj --configuration Release -- check
 dotnet run --project tools\CodexTracker.Tooling\CodexTracker.Tooling.csproj --configuration Release -- release
 ```
-
-The `src\check.ps1` and `src\launcher\build.ps1` files remain as compatibility wrappers for older repository installations. The fault-injection updater test remains PowerShell because it creates and mutates temporary Git repositories and Windows process fixtures.
-
-## Controls
-
-- Drag the widget to reposition it on the taskbar.
-- Use **Launch at Windows startup** to start it automatically after Windows sign-in.
-- Use **Hide widget** or **Quit** from the widget or tray menu when needed.
