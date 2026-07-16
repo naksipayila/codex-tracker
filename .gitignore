@@ -1,0 +1,13 @@
+node_modules/
+dist/
+bin/
+obj/
+.vs/
+*.log
+AGENTS.md
+.update.lock
+.update.pending
+
+# Runtime data is local to each Windows user.
+widget-position.json
+user-data/

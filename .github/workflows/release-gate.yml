@@ -1,0 +1,83 @@
+name: Release gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-2022
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: global.json
+
+      - name: Restore native application
+        shell: pwsh
+        run: dotnet restore .\src\CodexUsageTray.csproj
+
+      - name: Build native application
+        shell: pwsh
+        run: dotnet build .\src\CodexUsageTray.csproj --configuration Release --no-restore
+
+      - name: Run native unit tests
+        shell: pwsh
+        run: dotnet run --project .\tests\native\CodexUsageTray.NativeTests.csproj --configuration Release
+
+      - name: Verify tracked native protocol
+        shell: pwsh
+        run: |
+          $token = [guid]::NewGuid().ToString("N")
+          $ready = Join-Path $env:RUNNER_TEMP "launcher-self-test-$token.ready"
+          $process = Start-Process -FilePath ".\Codex Tracker.exe" -ArgumentList "--self-test", "3", $ready, $token -Wait -PassThru
+          if ($process.ExitCode -ne 0) { throw "The tracked native application failed its updater protocol self-test." }
+          $trackedResponse = (Get-Content -LiteralPath $ready -Raw).Trim()
+          Remove-Item -LiteralPath $ready -Force
+          $source = Join-Path $env:RUNNER_TEMP "Codex Tracker-source-check.exe"
+          .\src\launcher\build.ps1 -OutputPath $source
+          $sourceToken = [guid]::NewGuid().ToString("N")
+          $sourceReady = Join-Path $env:RUNNER_TEMP "source-self-test-$sourceToken.ready"
+          $sourceProcess = Start-Process -FilePath $source -ArgumentList "--self-test", "3", $sourceReady, $sourceToken -WorkingDirectory $env:GITHUB_WORKSPACE -Wait -PassThru
+          if ($sourceProcess.ExitCode -ne 0) { throw "The source-built native application failed its updater protocol self-test." }
+          $sourceResponse = (Get-Content -LiteralPath $sourceReady -Raw).Trim()
+          if ($trackedResponse.Substring($token.Length + 1) -ne $sourceResponse.Substring($sourceToken.Length + 1)) {
+            throw "The tracked native application does not match its build inputs."
+          }
+          if ((Get-FileHash ".\Codex Tracker.exe" -Algorithm SHA256).Hash -ne (Get-FileHash $source -Algorithm SHA256).Hash) {
+            throw "The tracked native application is not byte-identical to a source build."
+          }
+          $smokeToken = [guid]::NewGuid().ToString("N")
+          $smokeReady = Join-Path $env:RUNNER_TEMP "native-smoke-$smokeToken.ready"
+          $smoke = Start-Process -FilePath ".\Codex Tracker.exe" -ArgumentList "--native-smoke-test", $smokeReady, $smokeToken -WorkingDirectory $env:GITHUB_WORKSPACE -Wait -PassThru
+          if ($smoke.ExitCode -ne 0 -or !(Test-Path -LiteralPath $smokeReady) -or (Get-Content -LiteralPath $smokeReady -Raw).Trim() -ne $smokeToken) {
+            throw "The tracked native application failed its WPF readiness smoke test."
+          }
+          Remove-Item -LiteralPath $smokeReady -Force
+          Remove-Item -LiteralPath $sourceReady -Force
+
+      - name: Run updater fault-injection tests
+        shell: pwsh
+        run: |
+          .\tests\updater\Invoke-UpdaterTests.ps1 `
+            -SourceRoot $env:GITHUB_WORKSPACE `
+            -ScratchRoot (Join-Path $env:RUNNER_TEMP "codex-updater-tests")
+
+      - name: Assert clean checkout
+        shell: pwsh
+        run: |
+          git diff --exit-code -- .
+          git diff --cached --exit-code -- .
+          $status = git status --porcelain=v1 --untracked-files=all
+          if ($status) {
+            $status
+            throw "Release verification changed the checkout."
+          }
