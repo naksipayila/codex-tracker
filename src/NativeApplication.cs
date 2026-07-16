@@ -686,7 +686,7 @@ internal sealed class SettingsPanelWindow : Window
 
         body.Children.Add(CreateSectionLabel("Preferences"));
         body.Children.Add(CreateToggle("Check update at startup", updateAtStartup, setUpdateAtStartup));
-        body.Children.Add(CreateButton("Check for updates", checkUpdate));
+        body.Children.Add(CreateButton("Check for updates now", checkUpdate));
         body.Children.Add(CreateToggle("Launch at Windows startup", launchAtStartup, setLaunchAtStartup));
         body.Children.Add(CreateToggle("Hide in fullscreen apps", hideInFullscreen, setHideInFullscreen));
         body.Children.Add(CreateToggle("Show 6H usage", showFiveHour, setShowFiveHour));
