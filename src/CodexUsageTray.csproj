@@ -20,6 +20,8 @@
     <DebugType>none</DebugType>
     <DebugSymbols>false</DebugSymbols>
     <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    <DeterministicSourcePaths>true</DeterministicSourcePaths>
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <Version>1.0.0</Version>
     <Product>Codex Tracker</Product>
