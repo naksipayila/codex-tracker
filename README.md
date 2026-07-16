@@ -4,13 +4,13 @@ Windows taskbar widget for viewing your Latrix 6-hour and weekly usage limits.
 
 ## Usage
 
-1. Download and run `CodexTracker.exe` on Windows x64.
+1. Download and run `CodexTracker.exe` on Windows x64. The release installs itself for the current user under `%LOCALAPPDATA%\Programs\Codex Tracker` and relaunches from there.
 2. Add the Latrix API key to the OpenCode global config at `~/.config/opencode/opencode.json`, under `provider.latrix.options.apiKey`.
 3. Your Latrix limits appear in the widget automatically.
 
 ## Updates
 
-Release packages publish a self-contained `CodexTracker.exe` from version tags. Git-clone installations also use the repository updater and require the `main` branch with no local changes.
+Release packages publish a self-contained `CodexTracker.exe` from version tags. Downloaded releases install under `%LOCALAPPDATA%\Programs\Codex Tracker`; Git-clone installations remain in place, use the repository updater, and require the `main` branch with no local changes.
 
 Latrix usage reads the API key from the OpenCode global config at `~/.config/opencode/opencode.json`, under `provider.latrix.options.apiKey`. Codex Tracker does not ask for, copy, or store this key.
 

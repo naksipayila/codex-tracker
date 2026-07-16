@@ -85,6 +85,8 @@ internal static class Program
             return;
         }
 
+        if (EnsureInstalledAndRelaunch(applicationDirectory)) return;
+
         try
         {
             CodexUsageTray.NativeApplication.Run(applicationDirectory);
@@ -92,6 +94,118 @@ internal static class Program
         catch (Exception error)
         {
             ShowError("The widget could not be started.", error.Message);
+        }
+    }
+
+    private static bool EnsureInstalledAndRelaunch(string applicationDirectory)
+    {
+        var installDirectory = GetInstallDirectory();
+        if (PathsEqual(applicationDirectory, installDirectory) || IsGitCheckout(applicationDirectory)) return false;
+
+        var sourceExecutable = Path.GetFullPath(Application.ExecutablePath);
+        var installedExecutable = Path.Combine(installDirectory, "CodexTracker.exe");
+        var preserveStartupRegistration = Environment.GetEnvironmentVariable("CODEX_USAGE_TRAY_SKIP_STARTUP_MIGRATION") != "1";
+        var hadStartupRegistration = preserveStartupRegistration && StartupRegistration.HasAnyRegistration();
+
+        try
+        {
+            Directory.CreateDirectory(installDirectory);
+            if (IsExecutableRunning(installedExecutable))
+            {
+                StartInstalledApplication(installedExecutable, installDirectory);
+                return true;
+            }
+
+            InstallExecutableAtomically(sourceExecutable, installedExecutable);
+        }
+        catch (Exception)
+        {
+            if (!IsExecutableRunning(installedExecutable)) throw;
+            StartInstalledApplication(installedExecutable, installDirectory);
+            return true;
+        }
+
+        if (hadStartupRegistration) StartupRegistration.SetEnabled(installDirectory, true);
+        StartInstalledApplication(installedExecutable, installDirectory);
+        return true;
+    }
+
+    private static string GetInstallDirectory()
+    {
+        var overrideDirectory = Environment.GetEnvironmentVariable("CODEX_USAGE_TRAY_INSTALL_DIRECTORY");
+        return NormalizeDirectory(string.IsNullOrWhiteSpace(overrideDirectory)
+            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Programs", "Codex Tracker")
+            : overrideDirectory);
+    }
+
+    private static bool IsGitCheckout(string directory)
+    {
+        return File.Exists(Path.Combine(directory, ".git")) || Directory.Exists(Path.Combine(directory, ".git"));
+    }
+
+    private static void InstallExecutableAtomically(string source, string destination)
+    {
+        var temporary = Path.Combine(
+            Path.GetDirectoryName(destination),
+            "." + Path.GetFileName(destination) + "." + Guid.NewGuid().ToString("N") + ".tmp");
+        try
+        {
+            File.Copy(source, temporary, true);
+            if (File.Exists(destination)) File.Replace(temporary, destination, null);
+            else File.Move(temporary, destination);
+        }
+        finally
+        {
+            try { File.Delete(temporary); } catch { }
+        }
+    }
+
+    private static bool IsExecutableRunning(string executable)
+    {
+        var processName = Path.GetFileNameWithoutExtension(executable);
+        foreach (var process in Process.GetProcessesByName(processName))
+        {
+            try
+            {
+                if (PathsEqual(process.MainModule.FileName, executable)) return true;
+            }
+            catch
+            {
+            }
+            finally
+            {
+                process.Dispose();
+            }
+        }
+        return false;
+    }
+
+    private static void StartInstalledApplication(string executable, string directory)
+    {
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = executable,
+            WorkingDirectory = directory,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WindowStyle = ProcessWindowStyle.Hidden,
+        };
+        Process.Start(startInfo);
+    }
+
+    private static bool PathsEqual(string left, string right)
+    {
+        try
+        {
+            return string.Equals(
+                Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
         }
     }
 

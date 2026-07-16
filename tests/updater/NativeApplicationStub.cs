@@ -23,6 +23,13 @@ namespace CodexUsageTray
                 );
             }
 
+            var installProbePath = Environment.GetEnvironmentVariable("FAKE_APPLICATION_INSTALL_PROBE");
+            if (!string.IsNullOrEmpty(installProbePath))
+            {
+                File.WriteAllText(installProbePath, applicationDirectory, new UTF8Encoding(false));
+                return;
+            }
+
             if (string.Equals(
                 version,
                 Environment.GetEnvironmentVariable("FAKE_APPLICATION_FAIL_VERSION"),

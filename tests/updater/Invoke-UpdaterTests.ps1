@@ -25,6 +25,7 @@ $script:BuildInputs = @(
     "src/CodexUsageTray.csproj",
     "src/app.manifest",
     "src/NativeApplication.cs",
+    "src/StartupRegistration.cs",
     "src/NativeSettings.cs",
     "src/NativeMethods.cs",
     "src/WidgetWindow.cs",
@@ -116,6 +117,7 @@ function Build-FixtureLauncher([string] $Repository, [string] $OutputPath) {
         & $script:Csc /nologo /target:winexe "/out:$OutputPath" /reference:System.Windows.Forms.dll `
             (Join-Path $Repository "src\launcher\Program.cs") `
             (Join-Path $Repository "src\BuildManifest.cs") `
+            (Join-Path $Repository "src\StartupRegistration.cs") `
             (Join-Path $SourceRoot "tests\updater\NativeApplicationStub.cs") `
             $metadataPath
         if ($LASTEXITCODE -ne 0) { throw "Could not compile the native application fixture." }
@@ -141,6 +143,53 @@ function Stop-FakeApplication([string] $LogPath) {
             $process.Dispose()
         } catch {
         }
+    }
+}
+
+function Invoke-InstallCase {
+    $caseRoot = Join-Path $ScratchRoot "portable-install"
+    $portable = Join-Path $caseRoot "portable"
+    $installed = Join-Path $caseRoot "installed"
+    $probe = Join-Path $caseRoot "installed-directory.txt"
+    [IO.Directory]::CreateDirectory($portable) | Out-Null
+
+    Build-FixtureLauncher $SourceRoot (Join-Path $portable "CodexTracker.exe")
+    $previousInstallDirectory = $env:CODEX_USAGE_TRAY_INSTALL_DIRECTORY
+    $previousSkipMigration = $env:CODEX_USAGE_TRAY_SKIP_STARTUP_MIGRATION
+    $previousProbe = $env:FAKE_APPLICATION_INSTALL_PROBE
+    try {
+        $env:CODEX_USAGE_TRAY_INSTALL_DIRECTORY = $installed
+        $env:CODEX_USAGE_TRAY_SKIP_STARTUP_MIGRATION = "1"
+        $env:FAKE_APPLICATION_INSTALL_PROBE = $probe
+        $startInfo = New-Object Diagnostics.ProcessStartInfo
+        $startInfo.FileName = Join-Path $portable "CodexTracker.exe"
+        $startInfo.WorkingDirectory = $portable
+        $startInfo.UseShellExecute = $false
+        $process = [Diagnostics.Process]::Start($startInfo)
+        if (!$process.WaitForExit(90000)) {
+            $process.Kill()
+            throw "Portable install case timed out."
+        }
+        $process.Dispose()
+
+        $deadline = [DateTime]::UtcNow.AddSeconds(15)
+        while (!(Test-Path -LiteralPath $probe) -and [DateTime]::UtcNow -lt $deadline) {
+            Start-Sleep -Milliseconds 100
+        }
+        if (!(Test-Path -LiteralPath (Join-Path $installed "CodexTracker.exe"))) {
+            throw "Portable install case did not create the installed executable."
+        }
+        $installedDirectory = [IO.File]::ReadAllText($probe).Trim()
+        if (![string]::Equals(
+            [IO.Path]::GetFullPath($installedDirectory).TrimEnd('\', '/'),
+            [IO.Path]::GetFullPath($installed).TrimEnd('\', '/'),
+            [StringComparison]::OrdinalIgnoreCase)) {
+            throw "Portable install case launched from $installedDirectory instead of $installed."
+        }
+    } finally {
+        $env:CODEX_USAGE_TRAY_INSTALL_DIRECTORY = $previousInstallDirectory
+        $env:CODEX_USAGE_TRAY_SKIP_STARTUP_MIGRATION = $previousSkipMigration
+        $env:FAKE_APPLICATION_INSTALL_PROBE = $previousProbe
     }
 }
 
@@ -361,6 +410,7 @@ Invoke-UpdateCase "crlf-source-hash" "crlf-source"
 Invoke-UpdateCase "legacy-resume" "legacy-resume"
 Invoke-UpdateCase "rollback-resume" "rollback-resume"
 Invoke-UpdateCase "source-migration" "source-migration"
+Invoke-InstallCase
 $unicodeCaseName = "unicode-stra" + [char] 0x00df + "e"
 Invoke-UpdateCase $unicodeCaseName ""
 

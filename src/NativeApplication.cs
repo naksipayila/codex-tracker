@@ -128,14 +128,24 @@ internal sealed class NativeAppController : IDisposable
         tray.MouseDown += (_, eventArgs) =>
         {
             trayTogglePending = eventArgs.Button == System.Windows.Forms.MouseButtons.Left;
-            if (trayTogglePending) ToggleSettingsPanel();
         };
         tray.MouseUp += (_, eventArgs) =>
         {
             if (eventArgs.Button != System.Windows.Forms.MouseButtons.Left) return;
-            trayTogglePending = false;
+            var shouldToggle = trayTogglePending;
+            if (!shouldToggle)
+            {
+                trayTogglePending = false;
+                return;
+            }
+            _ = application.Dispatcher.BeginInvoke(DispatcherPriority.Input, new Action(() =>
+            {
+                try { ToggleSettingsPanel(); }
+                finally { trayTogglePending = false; }
+            }));
         };
         UpdateTray();
+        StartupRegistration.RehomeIfConfigured(applicationDirectory);
 
         if (settings.ShowFiveHour || settings.ShowWeekly)
         {
@@ -253,7 +263,6 @@ internal sealed class NativeAppController : IDisposable
         try
         {
             if (quitting || !settingsPanelRequested || settingsPanel != null) return;
-            UpdateTray();
             var panel = new SettingsPanelWindow(
                 widget.IsVisible,
                 settings.UpdateAtStartup,
@@ -935,32 +944,5 @@ internal sealed class SettingsPanelWindow : Window
             Background = new MediaSolidColorBrush(MediaColor.FromRgb(0x25, 0x3b, 0x52)),
             Margin = new Thickness(0, 12, 0, 12),
         };
-    }
-
-}
-
-internal static class StartupRegistration
-{
-    private const string RegistryPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string ValueName = "CodexUsageTray";
-
-    public static bool IsEnabled(string applicationDirectory)
-    {
-        using var key = Registry.CurrentUser.OpenSubKey(RegistryPath, false);
-        return key?.GetValue(ValueName) is string;
-    }
-
-    public static void SetEnabled(string applicationDirectory, bool enabled)
-    {
-        using var key = Registry.CurrentUser.CreateSubKey(RegistryPath, true)
-            ?? throw new InvalidOperationException("The Windows startup registry key could not be opened.");
-        if (enabled)
-            key.SetValue(ValueName, "\"" + Path.Combine(applicationDirectory, "CodexTracker.exe") + "\"",
-                RegistryValueKind.String);
-        else key.DeleteValue(ValueName, false);
-
-        var legacyShortcut = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "Microsoft", "Windows", "Start Menu", "Programs", "Startup", "Codex Usage Tray.lnk");
-        try { File.Delete(legacyShortcut); } catch { }
     }
 }
