@@ -658,7 +658,7 @@ internal sealed class SettingsPanelWindow : Window
         bool canRepair,
         Action toggleWidget,
         Action openDashboard,
-        Action repairUpdate,
+        Action checkUpdate,
         Action<bool> setUpdateAtStartup,
         Action<bool> setLaunchAtStartup,
         Action<bool> setHideInFullscreen,
@@ -681,11 +681,12 @@ internal sealed class SettingsPanelWindow : Window
         body.Children.Add(CreateSectionLabel("Quick actions"));
         body.Children.Add(CreateButton(widgetVisible ? "Hide widget" : "Show widget", toggleWidget));
         body.Children.Add(CreateButton("Open Latrix usage dashboard", openDashboard));
-        if (canRepair) body.Children.Add(CreateButton("Repair update", repairUpdate));
+        if (canRepair) body.Children.Add(CreateButton("Repair update", checkUpdate));
         body.Children.Add(CreateSeparator());
 
         body.Children.Add(CreateSectionLabel("Preferences"));
         body.Children.Add(CreateToggle("Check update at startup", updateAtStartup, setUpdateAtStartup));
+        body.Children.Add(CreateButton("Check for updates", checkUpdate));
         body.Children.Add(CreateToggle("Launch at Windows startup", launchAtStartup, setLaunchAtStartup));
         body.Children.Add(CreateToggle("Hide in fullscreen apps", hideInFullscreen, setHideInFullscreen));
         body.Children.Add(CreateToggle("Show 6H usage", showFiveHour, setShowFiveHour));
