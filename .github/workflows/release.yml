@@ -63,13 +63,13 @@ jobs:
           "installer=$output" >> $env:GITHUB_OUTPUT
           "portable=$portable" >> $env:GITHUB_OUTPUT
 
-          $hash = (Get-FileHash -LiteralPath $output -Algorithm SHA256).Hash.ToLowerInvariant()
+          $packageHash = (Get-FileHash -LiteralPath $portable -Algorithm SHA256).Hash.ToLowerInvariant()
           $tag = "v$version"
           $packageUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/Codex%20Tracker.exe"
           $manifest = [ordered]@{
             version = $version
             packageUrl = $packageUrl
-            sha256 = $hash
+            sha256 = $packageHash
           }
           $manifestPath = Join-Path $env:RUNNER_TEMP "latest.json"
           [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json), (New-Object Text.UTF8Encoding($false)))
