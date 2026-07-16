@@ -424,7 +424,6 @@ internal sealed class NativeAppController : IDisposable
         var scale = NativeMethods.GetScaleForWindow(widget);
         var bounds = screen.Bounds;
         var workArea = screen.WorkingArea;
-        var widthPixels = (int)Math.Round(widget.Width * scale);
         var heightPixels = (int)Math.Round(widget.Height * scale);
         var taskbarHorizontal = workArea.Height < bounds.Height;
         var taskbarVertical = workArea.Width < bounds.Width;
@@ -469,15 +468,13 @@ internal sealed class NativeAppController : IDisposable
         else if (taskbarVertical && workArea.Left > bounds.Left)
         {
             widget.SetAvailableWidth(WidgetWindow.PreferredWidth);
-            widthPixels = preferredWidthPixels;
             x = workArea.Left;
             y = bounds.Top + (bounds.Height - heightPixels) * 3 / 10;
         }
         else if (taskbarVertical)
         {
             widget.SetAvailableWidth(WidgetWindow.PreferredWidth);
-            widthPixels = preferredWidthPixels;
-            x = workArea.Right - widthPixels;
+            x = workArea.Right - preferredWidthPixels;
             y = bounds.Top + (bounds.Height - heightPixels) * 3 / 10;
         }
         else widget.SetAvailableWidth(WidgetWindow.PreferredWidth);
@@ -715,20 +712,12 @@ internal sealed class SettingsPanelWindow : Window
         };
     }
 
-    private static Button CreateButton(string text, Action action, bool isDanger = false, bool isSelected = false)
+    private static Button CreateButton(string text, Action action)
     {
-        var background = new MediaSolidColorBrush(isDanger
-            ? MediaColor.FromRgb(0x3c, 0x2a, 0x35)
-            : isSelected ? MediaColor.FromRgb(0x1d, 0x46, 0x5d) : MediaColor.FromRgb(0x22, 0x31, 0x44));
-        var hoverBackground = new MediaSolidColorBrush(isDanger
-            ? MediaColor.FromRgb(0x50, 0x31, 0x3c)
-            : isSelected ? MediaColor.FromRgb(0x25, 0x58, 0x72) : MediaColor.FromRgb(0x2b, 0x40, 0x57));
-        var border = new MediaSolidColorBrush(isDanger
-            ? MediaColor.FromRgb(0x79, 0x48, 0x55)
-            : isSelected ? MediaColor.FromRgb(0x4d, 0x85, 0xa5) : MediaColor.FromRgb(0x38, 0x50, 0x68));
-        var hoverBorder = new MediaSolidColorBrush(isDanger
-            ? MediaColor.FromRgb(0x9b, 0x5a, 0x68)
-            : isSelected ? MediaColor.FromRgb(0x65, 0xa5, 0xc8) : MediaColor.FromRgb(0x4d, 0x72, 0x94));
+        var background = new MediaSolidColorBrush(MediaColor.FromRgb(0x22, 0x31, 0x44));
+        var hoverBackground = new MediaSolidColorBrush(MediaColor.FromRgb(0x2b, 0x40, 0x57));
+        var border = new MediaSolidColorBrush(MediaColor.FromRgb(0x38, 0x50, 0x68));
+        var hoverBorder = new MediaSolidColorBrush(MediaColor.FromRgb(0x4d, 0x72, 0x94));
         var button = new Button
         {
             Content = text,
@@ -736,12 +725,10 @@ internal sealed class SettingsPanelWindow : Window
             Padding = new Thickness(11, 7, 11, 7),
             BorderThickness = new Thickness(1),
             Margin = new Thickness(0, 2, 0, 2),
-            Foreground = new MediaSolidColorBrush(isDanger
-                ? MediaColor.FromRgb(0xff, 0xbe, 0xb8)
-                : MediaColor.FromRgb(0xe0, 0xea, 0xf7)),
+            Foreground = new MediaSolidColorBrush(MediaColor.FromRgb(0xe0, 0xea, 0xf7)),
             FontFamily = new MediaFontFamily("Segoe UI Variable Text, Segoe UI"),
             FontSize = 13,
-            FontWeight = isSelected ? FontWeights.SemiBold : FontWeights.Normal,
+            FontWeight = FontWeights.Normal,
             Cursor = System.Windows.Input.Cursors.Hand,
         };
         var template = new ControlTemplate(typeof(Button));

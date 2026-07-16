@@ -34,15 +34,11 @@ jobs:
             throw "Release builds require .NET SDK 8.0.422."
           }
 
-      - name: Install Inno Setup
-        shell: pwsh
-        run: choco install innosetup --no-progress --yes
-
       - name: Verify source and build inputs
         shell: pwsh
         run: .\src\check.ps1
 
-      - name: Build installer
+      - name: Build portable release
         id: package
         shell: pwsh
         env:
@@ -56,11 +52,9 @@ jobs:
           if ($version -notmatch '^\d+\.\d+\.\d+$') {
             throw "Release version must use numeric major.minor.patch format: $version"
           }
-          $output = Join-Path $env:RUNNER_TEMP "Codex Tracker Setup.exe"
           $portable = Join-Path $env:RUNNER_TEMP "Codex.Tracker.exe"
-          .\installer\build.ps1 -OutputPath $output -PortableOutputPath $portable -Version $version
+          .\src\launcher\build.ps1 -OutputPath $portable -SelfContained -Version $version
           "version=$version" >> $env:GITHUB_OUTPUT
-          "installer=$output" >> $env:GITHUB_OUTPUT
           "portable=$portable" >> $env:GITHUB_OUTPUT
 
           $packageHash = (Get-FileHash -LiteralPath $portable -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -102,26 +96,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.package.outputs.version }}
-          INSTALLER: ${{ steps.package.outputs.installer }}
           PORTABLE: ${{ steps.package.outputs.portable }}
           MANIFEST: ${{ steps.package.outputs.manifest }}
         run: |
           $tag = "v$env:VERSION"
-          $hashFile = "$env:INSTALLER.sha256"
-          $hash = (Get-FileHash -LiteralPath $env:INSTALLER -Algorithm SHA256).Hash.ToLowerInvariant()
-          [IO.File]::WriteAllText(
-            $hashFile,
-            $hash + " *Codex Tracker Setup.exe" + [Environment]::NewLine,
-            (New-Object Text.UTF8Encoding($false))
-          )
           $portableHashFile = "$env:PORTABLE.sha256"
           $portableHash = (Get-FileHash -LiteralPath $env:PORTABLE -Algorithm SHA256).Hash.ToLowerInvariant()
           [IO.File]::WriteAllText(
             $portableHashFile,
-            $portableHash + " *Codex Tracker.exe" + [Environment]::NewLine,
+            $portableHash + " *Codex.Tracker.exe" + [Environment]::NewLine,
             (New-Object Text.UTF8Encoding($false))
           )
-          gh release create $tag $env:INSTALLER $env:PORTABLE $hashFile $portableHashFile $env:MANIFEST `
+          gh release create $tag $env:PORTABLE $portableHashFile $env:MANIFEST `
             --repo $env:GITHUB_REPOSITORY `
             --title "Codex Tracker $env:VERSION" `
             --generate-notes

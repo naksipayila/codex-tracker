@@ -1783,7 +1783,6 @@ internal static class Program
         {
             return new PendingUpdateState
             {
-                ApplicationDirectory = NormalizeDirectory(applicationDirectory),
                 ExpectedCommit = parts[0],
                 TargetCommit = parts[1],
                 Phase = "legacy",
@@ -1842,11 +1841,9 @@ internal static class Program
             }
             return new PendingUpdateState
             {
-                ApplicationDirectory = NormalizeDirectory(applicationDirectory),
                 Mode = "package",
                 ExpectedExecutableSha256 = parts[3],
                 TargetVersion = parts[4],
-                Token = parts[5],
                 PackageSha256 = parts[6],
                 PackagePath = packagePath,
                 Phase = parts[8],
@@ -1862,11 +1859,9 @@ internal static class Program
         }
         return new PendingUpdateState
         {
-            ApplicationDirectory = NormalizeDirectory(applicationDirectory),
             Mode = "git",
             ExpectedCommit = parts[2],
             TargetCommit = parts[3],
-            Token = token,
             Phase = phase,
         };
     }
@@ -2358,7 +2353,6 @@ internal static class Program
 
     private sealed class PendingUpdateState
     {
-        public string ApplicationDirectory;
         public string Mode;
         public string ExpectedCommit;
         public string TargetCommit;
@@ -2366,7 +2360,6 @@ internal static class Program
         public string TargetVersion;
         public string PackageSha256;
         public string PackagePath;
-        public string Token;
         public string Phase;
     }
 

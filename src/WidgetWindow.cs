@@ -11,7 +11,6 @@ namespace CodexUsageTray;
 internal sealed class WidgetWindow : Window
 {
     public const double PreferredWidth = 340;
-    private static readonly Color BackgroundColor = Color.FromArgb(235, 0x16, 0x20, 0x2d);
     private static readonly Color LabelColor = Color.FromRgb(0x8e, 0xa9, 0xc7);
     private static readonly Color ValueColor = Color.FromRgb(0x78, 0xe0, 0xb1);
     private static readonly Color ResetColor = Color.FromRgb(0xae, 0xd0, 0xf7);
@@ -43,14 +42,14 @@ internal sealed class WidgetWindow : Window
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
         AllowsTransparency = true;
-        Background = new SolidColorBrush(BackgroundColor);
+        Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0));
         ShowInTaskbar = false;
         ShowActivated = false;
         Focusable = false;
         SnapsToDevicePixels = true;
         UseLayoutRounding = true;
 
-        var root = new Grid { Background = new SolidColorBrush(BackgroundColor) };
+        var root = new Grid { Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)) };
 
         usageGrid = new Grid { Margin = new Thickness(8, 0, 8, 0), Cursor = Cursors.SizeAll };
         usageGrid.ColumnDefinitions.Add(new ColumnDefinition());
@@ -58,7 +57,7 @@ internal sealed class WidgetWindow : Window
         usageGrid.ColumnDefinitions.Add(new ColumnDefinition());
 
         fiveHourValue = CreateText("--", ValueColor, 39, TextAlignment.Right);
-        fiveHourReset = CreateText("", ResetColor, 78, TextAlignment.Right);
+        fiveHourReset = CreateText("", ResetColor, 44, TextAlignment.Right);
         fiveHourLabel = CreateLabel("5H");
         fiveHourMetric = CreateMetric(fiveHourLabel, fiveHourValue, fiveHourReset, false);
         Grid.SetColumn(fiveHourMetric, 0);
@@ -174,7 +173,7 @@ internal sealed class WidgetWindow : Window
             Text = text,
             Foreground = new SolidColorBrush(LabelColor),
             FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI"),
-            FontSize = 14,
+            FontSize = 13,
             FontWeight = FontWeights.SemiBold,
             VerticalAlignment = VerticalAlignment.Center,
             Effect = CreateShadow(),
@@ -205,7 +204,7 @@ internal sealed class WidgetWindow : Window
             MinWidth = minWidth,
             Foreground = new SolidColorBrush(color),
             FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI"),
-            FontSize = 14,
+            FontSize = 13,
             FontWeight = FontWeights.SemiBold,
             TextAlignment = alignment,
             VerticalAlignment = VerticalAlignment.Center,

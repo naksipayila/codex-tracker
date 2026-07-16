@@ -1,2 +1,0 @@
-Codex Tracker release notes.
-Installer and automatic updates are enabled.

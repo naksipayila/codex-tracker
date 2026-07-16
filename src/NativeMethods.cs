@@ -11,7 +11,6 @@ internal static class NativeMethods
 {
     private const int TaskbarControlMargin = 8;
     private const int ReadableWidgetWidth = 120;
-    public const int GwlpHwndParent = -8;
     public const int GwlExStyle = -20;
     public const long WsExToolWindow = 0x00000080L;
     public const long WsExAppWindow = 0x00040000L;
