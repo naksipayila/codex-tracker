@@ -9,6 +9,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
+using CodexUsageTray;
 
 internal static class Program
 {
@@ -109,24 +110,10 @@ internal static class Program
             var sourceAvailable = File.Exists(Path.Combine(applicationDirectory, "src", "CodexUsageTray.csproj"));
             if (sourceAvailable)
             {
-                foreach (var relativePath in new[]
+                foreach (var relativePath in NativeBuildManifest.RequiredFiles)
                 {
-                    "global.json",
-                    Path.Combine("src", "CodexUsageTray.csproj"),
-                    Path.Combine("src", "app.manifest"),
-                    Path.Combine("src", "NativeApplication.cs"),
-                    Path.Combine("src", "NativeSettings.cs"),
-                    Path.Combine("src", "NativeMethods.cs"),
-                    Path.Combine("src", "WidgetWindow.cs"),
-                    Path.Combine("src", "NativeTypes.cs"),
-                    Path.Combine("src", "LatrixIntegration.cs"),
-                    Path.Combine("src", "UpdateService.cs"),
-                    Path.Combine("src", "launcher", "Program.cs"),
-                    Path.Combine("src", "launcher", "build.ps1"),
-                    Path.Combine("src", "launcher", "icon.ico"),
-                })
-                {
-                    if (!File.Exists(Path.Combine(applicationDirectory, relativePath))) return 3;
+                    if (!File.Exists(Path.Combine(applicationDirectory,
+                        relativePath.Replace('/', Path.DirectorySeparatorChar)))) return 3;
                 }
             }
             var buildHash = GetEmbeddedLauncherBuildHash();
@@ -494,28 +481,7 @@ internal static class Program
 
     private static string GetLauncherBuildHash(string applicationDirectory)
     {
-        var manifest = new StringBuilder();
-        foreach (var relativePath in NativeBuildInputFiles)
-        {
-            var path = Path.Combine(applicationDirectory, relativePath.Replace('/', Path.DirectorySeparatorChar));
-            manifest.Append(relativePath).Append('\0');
-            if (relativePath.EndsWith(".ico", StringComparison.OrdinalIgnoreCase))
-                manifest.Append(Convert.ToBase64String(File.ReadAllBytes(path)));
-            else
-                manifest.Append(NormalizeText(File.ReadAllText(path)));
-            manifest.Append('\0');
-        }
-        using (var sha256 = SHA256.Create())
-        {
-            return BitConverter.ToString(
-                sha256.ComputeHash(Encoding.UTF8.GetBytes(manifest.ToString()))
-            ).Replace("-", "").ToLowerInvariant();
-        }
-    }
-
-    private static string NormalizeText(string value)
-    {
-        return value.Replace("\r\n", "\n").Replace("\r", "\n");
+        return NativeBuildManifest.ComputeHash(applicationDirectory);
     }
 
     private static Process StartApplication(
@@ -2515,22 +2481,6 @@ internal static class Program
 
     private static readonly DateTime UnixEpoch = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc);
     private const string UpdaterProtocolVersion = "3";
-    private static readonly string[] NativeBuildInputFiles =
-    {
-        "global.json",
-        "src/CodexUsageTray.csproj",
-        "src/app.manifest",
-        "src/NativeApplication.cs",
-        "src/NativeSettings.cs",
-        "src/NativeMethods.cs",
-        "src/WidgetWindow.cs",
-        "src/NativeTypes.cs",
-        "src/LatrixIntegration.cs",
-        "src/UpdateService.cs",
-        "src/launcher/Program.cs",
-        "src/launcher/build.ps1",
-        "src/launcher/icon.ico",
-    };
     private const string PendingStateVersion = "v3";
     private const string PackagePendingStateVersion = "v4";
     private const string UpdateBranch = "main";

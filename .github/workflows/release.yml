@@ -28,79 +28,17 @@ jobs:
           global-json-file: global.json
 
       - name: Verify .NET SDK
-        shell: pwsh
-        run: |
-          if ((dotnet --version).Trim() -ne "8.0.422") {
-            throw "Release builds require .NET SDK 8.0.422."
-          }
+        shell: cmd
+        run: dotnet run --project tools\CodexTracker.Tooling\CodexTracker.Tooling.csproj --configuration Release -- verify-sdk
 
       - name: Verify source and build inputs
-        shell: pwsh
-        run: .\src\check.ps1
-
-      - name: Build portable release
-        id: package
-        shell: pwsh
-        env:
-          TAG_NAME: ${{ github.ref_name }}
-          INPUT_VERSION: ${{ inputs.version }}
-        run: |
-          $version = $env:INPUT_VERSION
-          if ([string]::IsNullOrWhiteSpace($version)) {
-            $version = $env:TAG_NAME -replace '^v', ''
-          }
-          if ($version -notmatch '^\d+\.\d+\.\d+$') {
-            throw "Release version must use numeric major.minor.patch format: $version"
-          }
-          $portable = Join-Path $env:RUNNER_TEMP "CodexTracker.exe"
-          .\src\launcher\build.ps1 -OutputPath $portable -SelfContained -Version $version
-          "version=$version" >> $env:GITHUB_OUTPUT
-          "portable=$portable" >> $env:GITHUB_OUTPUT
-
-          $packageHash = (Get-FileHash -LiteralPath $portable -Algorithm SHA256).Hash.ToLowerInvariant()
-          $tag = "v$version"
-          $packageUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/CodexTracker.exe"
-          $manifest = [ordered]@{
-            version = $version
-            packageUrl = $packageUrl
-            sha256 = $packageHash
-          }
-          $manifestPath = Join-Path $env:RUNNER_TEMP "latest.json"
-          [IO.File]::WriteAllText($manifestPath, ($manifest | ConvertTo-Json), (New-Object Text.UTF8Encoding($false)))
-          "manifest=$manifestPath" >> $env:GITHUB_OUTPUT
-
-      - name: Smoke test self-contained package
-        shell: pwsh
-        env:
-          PORTABLE: ${{ steps.package.outputs.portable }}
-        run: |
-          $token = [guid]::NewGuid().ToString("N")
-          $ready = Join-Path $env:RUNNER_TEMP "release-self-test-$token.ready"
-          $process = Start-Process -FilePath $env:PORTABLE -ArgumentList "--self-test", "3", $ready, $token -WorkingDirectory $env:RUNNER_TEMP -Wait -PassThru
-          if ($process.ExitCode -ne 0 -or !(Test-Path -LiteralPath $ready)) {
-            throw "The self-contained release failed its updater protocol self-test."
-          }
-          Remove-Item -LiteralPath $ready -Force
-
-          $smokeToken = [guid]::NewGuid().ToString("N")
-          $smokeReady = Join-Path $env:RUNNER_TEMP "release-native-smoke-$smokeToken.ready"
-          $smoke = Start-Process -FilePath $env:PORTABLE -ArgumentList "--native-smoke-test", $smokeReady, $smokeToken -WorkingDirectory $env:RUNNER_TEMP -Wait -PassThru
-          if ($smoke.ExitCode -ne 0 -or !(Test-Path -LiteralPath $smokeReady) -or
-              (Get-Content -LiteralPath $smokeReady -Raw).Trim() -ne $smokeToken) {
-            throw "The self-contained release failed its WPF readiness smoke test."
-          }
-          Remove-Item -LiteralPath $smokeReady -Force
+        shell: cmd
+        run: dotnet run --project tools\CodexTracker.Tooling\CodexTracker.Tooling.csproj --configuration Release -- check
 
       - name: Create GitHub Release
-        shell: pwsh
+        shell: cmd
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.package.outputs.version }}
-          PORTABLE: ${{ steps.package.outputs.portable }}
-          MANIFEST: ${{ steps.package.outputs.manifest }}
+          INPUT_VERSION: ${{ inputs.version }}
         run: |
-          $tag = "v$env:VERSION"
-          gh release create $tag $env:PORTABLE $env:MANIFEST `
-            --repo $env:GITHUB_REPOSITORY `
-            --title "Codex Tracker $env:VERSION" `
-            --generate-notes
+          dotnet run --project tools\CodexTracker.Tooling\CodexTracker.Tooling.csproj --configuration Release -- release

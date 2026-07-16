@@ -14,6 +14,18 @@ Release packages publish a self-contained `CodexTracker.exe` from version tags. 
 
 Latrix usage reads the API key from the OpenCode global config at `~/.config/opencode/opencode.json`, under `provider.latrix.options.apiKey`. Codex Tracker does not ask for, copy, or store this key.
 
+## Development
+
+Build and verification commands are implemented in the C# tooling project:
+
+```text
+dotnet run --project tools\CodexTracker.Tooling\CodexTracker.Tooling.csproj --configuration Release -- build --output .\CodexTracker.exe
+dotnet run --project tools\CodexTracker.Tooling\CodexTracker.Tooling.csproj --configuration Release -- check
+dotnet run --project tools\CodexTracker.Tooling\CodexTracker.Tooling.csproj --configuration Release -- release
+```
+
+The `src\check.ps1` and `src\launcher\build.ps1` files remain as compatibility wrappers for older repository installations. The fault-injection updater test remains PowerShell because it creates and mutates temporary Git repositories and Windows process fixtures.
+
 ## Controls
 
 - Drag the widget to reposition it on the taskbar.

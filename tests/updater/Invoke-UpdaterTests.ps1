@@ -35,6 +35,7 @@ $script:BuildInputs = @(
     "src/launcher/build.ps1",
     "src/launcher/icon.ico"
 )
+$script:RequiredFiles = @($script:BuildInputs + "src/BuildManifest.cs")
 $script:Csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 
 function Write-Text([string] $Path, [string] $Content) {
@@ -114,6 +115,7 @@ function Build-FixtureLauncher([string] $Repository, [string] $OutputPath) {
     try {
         & $script:Csc /nologo /target:winexe "/out:$OutputPath" /reference:System.Windows.Forms.dll `
             (Join-Path $Repository "src\launcher\Program.cs") `
+            (Join-Path $Repository "src\BuildManifest.cs") `
             (Join-Path $SourceRoot "tests\updater\NativeApplicationStub.cs") `
             $metadataPath
         if ($LASTEXITCODE -ne 0) { throw "Could not compile the native application fixture." }
@@ -143,7 +145,7 @@ function Stop-FakeApplication([string] $LogPath) {
 }
 
 function Copy-NativeSources([string] $Repository) {
-    foreach ($relativePath in $script:BuildInputs) {
+    foreach ($relativePath in $script:RequiredFiles) {
         $source = Join-Path $SourceRoot ($relativePath.Replace("/", [IO.Path]::DirectorySeparatorChar))
         $destination = Join-Path $Repository ($relativePath.Replace("/", [IO.Path]::DirectorySeparatorChar))
         [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($destination)) | Out-Null
@@ -188,7 +190,7 @@ function Invoke-UpdateCase([string] $Name, [string] $Fault) {
     Write-Text (Join-Path $repository "src\version.txt") "A`n"
     Build-FixtureLauncher $repository (Join-Path $repository "CodexTracker.exe")
     if ($Fault -eq "source-migration") {
-        foreach ($relativePath in $script:BuildInputs) {
+        foreach ($relativePath in $script:RequiredFiles) {
             Remove-Item -LiteralPath (Join-Path $repository ($relativePath.Replace("/", [IO.Path]::DirectorySeparatorChar))) -Force
         }
     }

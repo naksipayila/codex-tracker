@@ -292,23 +292,8 @@ internal sealed class UpdateService
 
     private async Task ValidateTargetAsync(string commit)
     {
-        foreach (var path in new[]
-        {
-            "global.json",
-            "CodexTracker.exe",
-            "src/CodexUsageTray.csproj",
-            "src/app.manifest",
-            "src/NativeApplication.cs",
-            "src/WidgetWindow.cs",
-            "src/NativeTypes.cs",
-            "src/LatrixIntegration.cs",
-            "src/UpdateService.cs",
-            "src/NativeSettings.cs",
-            "src/NativeMethods.cs",
-            "src/launcher/Program.cs",
-            "src/launcher/build.ps1",
-            "src/launcher/icon.ico",
-        })
+        await RunGitAsync(["cat-file", "-e", $"{commit}:CodexTracker.exe"]);
+        foreach (var path in NativeBuildManifest.RequiredFiles)
         {
             await RunGitAsync(["cat-file", "-e", $"{commit}:{path}"]);
         }
