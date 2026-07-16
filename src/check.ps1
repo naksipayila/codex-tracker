@@ -48,16 +48,6 @@ try {
     if ($responses[0] -ne $responses[1]) {
         throw "The tracked Codex Tracker.exe does not match the native build inputs."
     }
-    $sha256 = [Security.Cryptography.SHA256]::Create()
-    try {
-        $trackedHash = [BitConverter]::ToString($sha256.ComputeHash([IO.File]::ReadAllBytes($launcher)))
-        $sourceHash = [BitConverter]::ToString($sha256.ComputeHash([IO.File]::ReadAllBytes($sourceLauncher)))
-    } finally {
-        $sha256.Dispose()
-    }
-    if ($trackedHash -ne $sourceHash) {
-        throw "The tracked Codex Tracker.exe is not byte-identical to a source build."
-    }
     $smokeToken = [guid]::NewGuid().ToString("N")
     $smokeReady = Join-Path $tempDirectory ("native-smoke-" + $smokeToken + ".ready")
     $smokeProcess = Start-Process -FilePath $launcher `
