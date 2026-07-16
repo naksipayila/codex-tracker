@@ -155,13 +155,18 @@ internal static class Program
             () => false
         );
         var body = (StackPanel)((Border)panel.Content).Child;
-        if (body.Children.OfType<TextBlock>().Any(text => text.Text == "Codex Tracker"))
-            throw new InvalidOperationException("The settings panel title is still present.");
+        Equal(392d, panel.Width, "settings panel width");
+        var root = (Border)panel.Content;
+        Equal(14d, root.CornerRadius.TopLeft, "settings panel corner radius");
+        var header = (Border)body.Children[0];
+        var headerBody = (StackPanel)header.Child;
+        Equal("Codex Tracker", ((TextBlock)headerBody.Children[0]).Text, "settings panel title");
+        Equal("Taskbar usage monitor", ((TextBlock)headerBody.Children[1]).Text, "settings panel subtitle");
         Equal("QUICK ACTIONS|PREFERENCES",
             string.Join("|", body.Children.OfType<TextBlock>()
                 .Where(text => text.Text == text.Text.ToUpperInvariant())
                 .Select(text => text.Text)), "settings section labels");
-        var separators = body.Children.OfType<Border>().ToArray();
+        var separators = body.Children.OfType<Border>().Where(border => border.Height == 1).ToArray();
         Equal(1, separators.Length, "settings section separators");
         foreach (var separator in separators)
             Equal(1d, separator.Height, "settings separator height");
