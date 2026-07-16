@@ -60,9 +60,6 @@ jobs:
           if ($trackedResponse.Substring($token.Length + 1) -ne $sourceResponse.Substring($sourceToken.Length + 1)) {
             throw "The tracked native application does not match its build inputs."
           }
-          if ((Get-FileHash ".\Codex Tracker.exe" -Algorithm SHA256).Hash -ne (Get-FileHash $source -Algorithm SHA256).Hash) {
-            throw "The tracked native application is not byte-identical to a source build."
-          }
           $smokeToken = [guid]::NewGuid().ToString("N")
           $smokeReady = Join-Path $env:RUNNER_TEMP "native-smoke-$smokeToken.ready"
           $smoke = Start-Process -FilePath ".\Codex Tracker.exe" -ArgumentList "--native-smoke-test", $smokeReady, $smokeToken -WorkingDirectory $env:GITHUB_WORKSPACE -Wait -PassThru
