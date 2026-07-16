@@ -21,7 +21,7 @@ internal static class Program
             return;
         }
 
-        if (args.Length > 0 && args[0] == "--update")
+        if (args.Length > 0 && (args[0] == "--update" || args[0] == "--package-update"))
         {
             RunUpdater(args);
             return;
@@ -106,24 +106,28 @@ internal static class Program
                 if (File.Exists(Path.Combine(workingDirectory, "src", "CodexUsageTray.csproj")))
                     applicationDirectory = workingDirectory;
             }
-            foreach (var relativePath in new[]
+            var sourceAvailable = File.Exists(Path.Combine(applicationDirectory, "src", "CodexUsageTray.csproj"));
+            if (sourceAvailable)
             {
-                "global.json",
-                Path.Combine("src", "CodexUsageTray.csproj"),
-                Path.Combine("src", "app.manifest"),
-                Path.Combine("src", "NativeApplication.cs"),
-                Path.Combine("src", "NativeSettings.cs"),
-                Path.Combine("src", "NativeMethods.cs"),
-                Path.Combine("src", "WidgetWindow.cs"),
-                Path.Combine("src", "NativeTypes.cs"),
-                Path.Combine("src", "LatrixIntegration.cs"),
-                Path.Combine("src", "UpdateService.cs"),
-                Path.Combine("src", "launcher", "Program.cs"),
-                Path.Combine("src", "launcher", "build.ps1"),
-                Path.Combine("src", "launcher", "icon.ico"),
-            })
-            {
-                if (!File.Exists(Path.Combine(applicationDirectory, relativePath))) return 3;
+                foreach (var relativePath in new[]
+                {
+                    "global.json",
+                    Path.Combine("src", "CodexUsageTray.csproj"),
+                    Path.Combine("src", "app.manifest"),
+                    Path.Combine("src", "NativeApplication.cs"),
+                    Path.Combine("src", "NativeSettings.cs"),
+                    Path.Combine("src", "NativeMethods.cs"),
+                    Path.Combine("src", "WidgetWindow.cs"),
+                    Path.Combine("src", "NativeTypes.cs"),
+                    Path.Combine("src", "LatrixIntegration.cs"),
+                    Path.Combine("src", "UpdateService.cs"),
+                    Path.Combine("src", "launcher", "Program.cs"),
+                    Path.Combine("src", "launcher", "build.ps1"),
+                    Path.Combine("src", "launcher", "icon.ico"),
+                })
+                {
+                    if (!File.Exists(Path.Combine(applicationDirectory, relativePath))) return 3;
+                }
             }
             var buildHash = GetEmbeddedLauncherBuildHash();
             if (buildHash.Length != 64) return 5;
@@ -561,37 +565,52 @@ internal static class Program
             var pending = ReadPendingUpdateState(pendingPath, applicationDirectory);
             if (pending.Phase == "rolled-back" || pending.Phase == "complete")
             {
-                var headResult = RunCommand(
-                    "git.exe",
-                    "-C " + QuoteArgument(applicationDirectory) + " rev-parse HEAD",
-                    applicationDirectory,
-                    GitTimeoutMs
-                );
-                if (headResult.ExitCode != 0 || !string.Equals(
-                    headResult.Output.Trim(),
-                    pending.Phase == "complete" ? pending.TargetCommit : pending.ExpectedCommit,
-                    StringComparison.OrdinalIgnoreCase
-                ))
+                var valid = pending.Mode == "package"
+                    ? IsInstalledExecutableHash(applicationDirectory,
+                        pending.Phase == "complete" ? pending.PackageSha256 : pending.ExpectedExecutableSha256)
+                    : IsRepositoryAtCommit(
+                        applicationDirectory,
+                        pending.Phase == "complete" ? pending.TargetCommit : pending.ExpectedCommit
+                    );
+                if (!valid)
                 {
-                    throw new InvalidOperationException("The completed update marker does not match the repository.");
+                    throw new InvalidOperationException("The completed update marker does not match the installed application.");
                 }
                 TryDeleteFile(pendingPath);
+                if (pending.Mode == "package")
+                {
+                    TryDeleteFile(pending.PackagePath);
+                    TryDeleteFile(Path.Combine(applicationDirectory, ".Codex Tracker.exe.update-backup"));
+                }
                 StartApplication(applicationDirectory, null, null, pending.Phase == "rolled-back");
                 return;
             }
 
             var paths = CreateUpdatePaths(applicationDirectory);
             var helper = CopyUpdaterToTemp(paths.Token);
-            var startInfo = CreateUpdaterStartInfo(
-                helper,
-                applicationDirectory,
-                Process.GetCurrentProcess().Id,
-                0,
-                pending.ExpectedCommit,
-                pending.TargetCommit,
-                pending.Phase,
-                paths
-            );
+            var startInfo = pending.Mode == "package"
+                ? CreatePackageUpdaterStartInfo(
+                    helper,
+                    applicationDirectory,
+                    Process.GetCurrentProcess().Id,
+                    0,
+                    pending.ExpectedExecutableSha256,
+                    pending.TargetVersion,
+                    pending.PackagePath,
+                    pending.PackageSha256,
+                    pending.Phase,
+                    paths
+                )
+                : CreateUpdaterStartInfo(
+                    helper,
+                    applicationDirectory,
+                    Process.GetCurrentProcess().Id,
+                    0,
+                    pending.ExpectedCommit,
+                    pending.TargetCommit,
+                    pending.Phase,
+                    paths
+                );
             updater = Process.Start(startInfo);
             if (updater == null || !WaitForTokenFile(
                 paths.HandoffReadyPath,
@@ -677,10 +696,9 @@ internal static class Program
             ownedLockContent = AcquireUpdateLock(options.ApplicationDirectory);
             TryDeleteFile(options.ResultPath);
             AppendLog(options.LogPath, "Updater started for " + options.ExpectedCommit + " -> " + options.TargetCommit + ".");
-            ownedPendingContent = WritePendingUpdateState(
-                options,
-                options.ResumePhase == "rollback" ? "rollback" : "prepared"
-            );
+            ownedPendingContent = options.Mode == "package"
+                ? WritePackagePendingUpdateState(options, options.ResumePhase == "rollback" ? "rollback" : "prepared")
+                : WritePendingUpdateState(options, options.ResumePhase == "rollback" ? "rollback" : "prepared");
             ownsPendingMarker = true;
             File.WriteAllText(options.HandoffReadyPath, options.Token, new UTF8Encoding(false));
             AppendLog(options.LogPath, "Handoff ready; waiting for the old application to exit.");
@@ -694,18 +712,21 @@ internal static class Program
 
             if (options.ResumePhase == "rollback")
             {
-                if (!RollbackAndRestart(options, reportProgress, out ownedPendingContent))
+                var recovered = options.Mode == "package"
+                    ? RollbackPackageAndRestart(options, reportProgress, out ownedPendingContent)
+                    : RollbackAndRestart(options, reportProgress, out ownedPendingContent);
+                if (!recovered)
                 {
                     throw new InvalidOperationException("The interrupted rollback could not be resumed.");
                 }
-                DeleteOwnedFileWithRetry(
-                    GetUpdatePendingPath(options.ApplicationDirectory),
-                    ownedPendingContent
-                );
-                DeleteOwnedFileWithRetry(
-                    GetLegacyUpdatePendingPath(),
-                    options.ExpectedCommit + "|" + options.TargetCommit
-                );
+                DeleteOwnedFileWithRetry(GetUpdatePendingPath(options.ApplicationDirectory), ownedPendingContent);
+                if (options.Mode != "package")
+                {
+                    DeleteOwnedFileWithRetry(
+                        GetLegacyUpdatePendingPath(),
+                        options.ExpectedCommit + "|" + options.TargetCommit
+                    );
+                }
                 if (DeleteOwnedFileWithRetry(
                     GetUpdateLockPath(options.ApplicationDirectory),
                     ownedLockContent
@@ -713,12 +734,15 @@ internal static class Program
                 {
                     ownedLockContent = null;
                 }
+                CleanupPackageFiles(options);
                 reportProgress("Previous version restored.", 100);
                 Thread.Sleep(600);
                 return;
             }
 
-            ownedPendingContent = ApplyUpdate(options, reportProgress);
+            ownedPendingContent = options.Mode == "package"
+                ? ApplyPackageUpdate(options, reportProgress)
+                : ApplyUpdate(options, reportProgress);
             TryDeleteFile(options.AppReadyPath);
             reportProgress("Restarting widget...", 90);
             launchedApplication = StartApplication(
@@ -742,7 +766,9 @@ internal static class Program
 
             AppendLog(options.LogPath, "The updated widget reported ready.");
             reportProgress("Finishing update...", 96);
-            ownedPendingContent = WritePendingUpdateState(options, "complete");
+            ownedPendingContent = options.Mode == "package"
+                ? WritePackagePendingUpdateState(options, "complete")
+                : WritePendingUpdateState(options, "complete");
             if (!DeleteOwnedFileWithRetry(
                 GetUpdatePendingPath(options.ApplicationDirectory),
                 ownedPendingContent
@@ -754,14 +780,17 @@ internal static class Program
             {
                 ownsPendingMarker = false;
             }
-            DeleteOwnedFileWithRetry(
-                GetLegacyUpdatePendingPath(),
-                options.ExpectedCommit + "|" + options.TargetCommit
-            );
-            DeleteOwnedFileWithRetry(
-                Path.Combine(options.ApplicationDirectory, LegacyUpdatePendingFileName),
-                options.ExpectedCommit + "|" + options.TargetCommit
-            );
+            if (options.Mode != "package")
+            {
+                DeleteOwnedFileWithRetry(
+                    GetLegacyUpdatePendingPath(),
+                    options.ExpectedCommit + "|" + options.TargetCommit
+                );
+                DeleteOwnedFileWithRetry(
+                    Path.Combine(options.ApplicationDirectory, LegacyUpdatePendingFileName),
+                    options.ExpectedCommit + "|" + options.TargetCommit
+                );
+            }
             if (!DeleteOwnedFileWithRetry(
                 GetUpdateLockPath(options.ApplicationDirectory),
                 ownedLockContent
@@ -775,6 +804,7 @@ internal static class Program
             }
             TryDeleteFile(options.AppReadyPath);
             TryDeleteFile(options.ResultPath);
+            CleanupPackageFiles(options);
             AppendLog(options.LogPath, "Update completed successfully.");
             reportProgress("Update complete.", 100);
             Thread.Sleep(600);
@@ -811,7 +841,9 @@ internal static class Program
             {
                 try
                 {
-                    recovered = RollbackAndRestart(options, reportProgress, out ownedPendingContent);
+                    recovered = options.Mode == "package"
+                        ? RollbackPackageAndRestart(options, reportProgress, out ownedPendingContent)
+                        : RollbackAndRestart(options, reportProgress, out ownedPendingContent);
                     if (recovered)
                     {
                         if (!DeleteOwnedFileWithRetry(
@@ -821,14 +853,18 @@ internal static class Program
                         {
                             AppendLog(options.LogPath, "Warning: the rolled-back pending marker could not be removed.");
                         }
-                        DeleteOwnedFileWithRetry(
-                            GetLegacyUpdatePendingPath(),
-                            options.ExpectedCommit + "|" + options.TargetCommit
-                        );
-                        DeleteOwnedFileWithRetry(
-                            Path.Combine(options.ApplicationDirectory, LegacyUpdatePendingFileName),
-                            options.ExpectedCommit + "|" + options.TargetCommit
-                        );
+                        if (options.Mode != "package")
+                        {
+                            DeleteOwnedFileWithRetry(
+                                GetLegacyUpdatePendingPath(),
+                                options.ExpectedCommit + "|" + options.TargetCommit
+                            );
+                            DeleteOwnedFileWithRetry(
+                                Path.Combine(options.ApplicationDirectory, LegacyUpdatePendingFileName),
+                                options.ExpectedCommit + "|" + options.TargetCommit
+                            );
+                        }
+                        CleanupPackageFiles(options);
                         reportProgress("Previous version restored.", 100);
                         Thread.Sleep(600);
                     }
@@ -1009,6 +1045,182 @@ internal static class Program
         return WritePendingUpdateState(options, "verified");
     }
 
+    private static string ApplyPackageUpdate(UpdateOptions options, Action<string, int> reportProgress)
+    {
+        reportProgress("Checking release package...", 25);
+        WaitForRepositoryProcessesToExit(options.ApplicationDirectory, RepositoryExitTimeoutMs);
+        var launcher = Path.Combine(options.ApplicationDirectory, "Codex Tracker.exe");
+        if (!File.Exists(launcher)) throw new FileNotFoundException("The installed launcher is missing.", launcher);
+        if (!File.Exists(options.PackagePath)) throw new FileNotFoundException("The downloaded release package is missing.", options.PackagePath);
+        if (!string.Equals(ComputeFileSha256(options.PackagePath), options.PackageSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException("The downloaded release failed SHA-256 verification.");
+        }
+
+        var currentHash = ComputeFileSha256(launcher);
+        if (!string.Equals(currentHash, options.PackageSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            if (!string.Equals(currentHash, options.ExpectedExecutableSha256, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("The installed executable changed before the update started.");
+            reportProgress("Applying update files...", 45);
+            var replacement = Path.Combine(options.ApplicationDirectory, ".Codex Tracker.exe." + options.Token + ".new");
+            var backup = GetPackageBackupPath(options);
+            TryDeleteFile(replacement);
+            TryDeleteFile(backup);
+            File.Copy(options.PackagePath, replacement, true);
+            File.Replace(replacement, launcher, backup, true);
+            WritePackagePendingUpdateState(options, "replaced");
+        }
+
+        if (!string.Equals(ComputeFileSha256(launcher), options.PackageSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("The installed executable does not match the release package.");
+        }
+        ValidatePackageLauncher(options, launcher);
+        reportProgress("Verifying native update...", 82);
+        return WritePackagePendingUpdateState(options, "verified");
+    }
+
+    private static bool RollbackPackageAndRestart(
+        UpdateOptions options,
+        Action<string, int> reportProgress,
+        out string pendingContent
+    )
+    {
+        reportProgress("Restoring previous version...", 92);
+        pendingContent = WritePackagePendingUpdateState(options, "rollback");
+        WaitForRepositoryProcessesToExit(options.ApplicationDirectory, RepositoryExitTimeoutMs);
+        var launcher = Path.Combine(options.ApplicationDirectory, "Codex Tracker.exe");
+        var backup = GetPackageBackupPath(options);
+        if (File.Exists(backup))
+        {
+            var restore = Path.Combine(options.ApplicationDirectory, ".Codex Tracker.exe." + options.Token + ".restore");
+            TryDeleteFile(restore);
+            File.Copy(backup, restore, true);
+            File.Replace(restore, launcher, null, true);
+        }
+        if (!File.Exists(launcher) ||
+            !string.Equals(ComputeFileSha256(launcher), options.ExpectedExecutableSha256, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("The previous executable could not be restored.");
+        }
+        ValidatePackageLauncher(options, launcher);
+        pendingContent = WritePackagePendingUpdateState(options, "rolled-back");
+        reportProgress("Restarting previous version...", 97);
+        TryDeleteFile(options.AppReadyPath);
+        using (var application = StartApplication(
+            options.ApplicationDirectory,
+            options.AppReadyPath,
+            options.Token,
+            true
+        ))
+        {
+            if (!WaitForTokenFile(
+                options.AppReadyPath,
+                options.Token,
+                application,
+                RecoveryReadyTimeoutMs,
+                AppStabilityWindowMs
+            ))
+            {
+                KillProcessTree(application);
+                throw new InvalidOperationException("The restored widget did not remain ready.");
+            }
+        }
+        TryDeleteFile(options.AppReadyPath);
+        AppendLog(options.LogPath, "The previous version was restored and reported ready.");
+        return true;
+    }
+
+    private static void ValidatePackageLauncher(UpdateOptions options, string launcher)
+    {
+        var token = Guid.NewGuid().ToString("N");
+        var readyPath = Path.Combine(options.StateDirectory, "launcher-self-test-" + token + ".ready");
+        TryDeleteFile(readyPath);
+        try
+        {
+            var result = RunCommand(
+                launcher,
+                "--self-test " + UpdaterProtocolVersion + " " + QuoteArgument(readyPath) + " " + token,
+                options.ApplicationDirectory,
+                LauncherSelfTestTimeoutMs
+            );
+            AppendCommandResult(options.LogPath, launcher + " --self-test", result);
+            var response = File.Exists(readyPath) ? File.ReadAllText(readyPath).Trim() : "";
+            var separator = response.IndexOf('|');
+            if (result.ExitCode != 0 || separator <= 0 ||
+                !string.Equals(response[..separator], token, StringComparison.Ordinal) ||
+                response.Length - separator - 1 != 64)
+            {
+                throw new InvalidOperationException("The release launcher failed its compatibility self-test.");
+            }
+        }
+        finally
+        {
+            TryDeleteFile(readyPath);
+        }
+    }
+
+    private static bool IsRepositoryAtCommit(string applicationDirectory, string expectedCommit)
+    {
+        try
+        {
+            var result = RunCommand(
+                "git.exe",
+                "-C " + QuoteArgument(applicationDirectory) + " rev-parse HEAD",
+                applicationDirectory,
+                GitTimeoutMs
+            );
+            return result.ExitCode == 0 && string.Equals(
+                result.Output.Trim(),
+                expectedCommit,
+                StringComparison.OrdinalIgnoreCase
+            );
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static bool IsInstalledExecutableHash(string applicationDirectory, string expectedHash)
+    {
+        try
+        {
+            var launcher = Path.Combine(applicationDirectory, "Codex Tracker.exe");
+            return File.Exists(launcher) && string.Equals(
+                ComputeFileSha256(launcher),
+                expectedHash,
+                StringComparison.OrdinalIgnoreCase
+            );
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string GetPackageBackupPath(UpdateOptions options) =>
+        Path.Combine(options.ApplicationDirectory, ".Codex Tracker.exe.update-backup");
+
+    private static string ComputeFileSha256(string path)
+    {
+        using (var stream = File.OpenRead(path))
+        using (var sha256 = SHA256.Create())
+        {
+            return BitConverter.ToString(sha256.ComputeHash(stream)).Replace("-", "").ToLowerInvariant();
+        }
+    }
+
+    private static void CleanupPackageFiles(UpdateOptions options)
+    {
+        if (options.Mode != "package") return;
+        TryDeleteFile(options.PackagePath);
+        TryDeleteFile(GetPackageBackupPath(options));
+        TryDeleteFile(Path.Combine(options.ApplicationDirectory, ".Codex Tracker.exe." + options.Token + ".new"));
+        TryDeleteFile(Path.Combine(options.ApplicationDirectory, ".Codex Tracker.exe." + options.Token + ".restore"));
+    }
+
     private static void ValidateLauncher(UpdateOptions options)
     {
         var launcher = Path.Combine(options.ApplicationDirectory, "Codex Tracker.exe");
@@ -1164,6 +1376,7 @@ internal static class Program
 
     private static UpdateOptions ParseUpdateOptions(string[] args)
     {
+        var packageMode = args.Length > 0 && args[0] == "--package-update";
         var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         for (var index = 1; index < args.Length; index += 2)
         {
@@ -1177,33 +1390,60 @@ internal static class Program
             StateDirectory = Path.GetFullPath(RequireOption(values, "--state-dir")),
             ParentProcessId = ParseProcessId(RequireOption(values, "--parent-pid")),
             KeeperProcessId = ParseProcessId(RequireOption(values, "--keeper-pid")),
-            ExpectedCommit = RequireOption(values, "--expected"),
-            TargetCommit = RequireOption(values, "--target"),
             HandoffReadyPath = Path.GetFullPath(RequireOption(values, "--handoff-ready")),
             AppReadyPath = Path.GetFullPath(RequireOption(values, "--app-ready")),
             LogPath = Path.GetFullPath(RequireOption(values, "--log")),
             ResultPath = Path.GetFullPath(RequireOption(values, "--result")),
             Token = RequireOption(values, "--token"),
+            Mode = packageMode ? "package" : "git",
         };
         string resumePhase;
         options.ResumePhase = values.TryGetValue("--resume-phase", out resumePhase)
             ? resumePhase
             : "prepared";
-        if (!Directory.Exists(Path.Combine(options.ApplicationDirectory, ".git")))
-        {
-            throw new DirectoryNotFoundException("The repository Git directory was not found.");
-        }
-        if (!IsCommitHash(options.ExpectedCommit) || !IsCommitHash(options.TargetCommit))
-        {
-            throw new ArgumentException("The updater received an invalid commit hash.");
-        }
         if (options.Token.Length < 16) throw new ArgumentException("The updater token is invalid.");
-        if (options.ResumePhase != "legacy" && options.ResumePhase != "prepared" &&
-            options.ResumePhase != "merged" &&
-            options.ResumePhase != "verified" && options.ResumePhase != "launching" &&
-            options.ResumePhase != "rollback")
+        if (options.Mode == "package")
         {
-            throw new ArgumentException("The updater resume phase is invalid.");
+            options.PackagePath = Path.GetFullPath(RequireOption(values, "--package"));
+            options.PackageSha256 = RequireOption(values, "--package-sha256").ToLowerInvariant();
+            options.ExpectedExecutableSha256 = RequireOption(values, "--expected-exe-sha256").ToLowerInvariant();
+            options.TargetVersion = RequireOption(values, "--target-version");
+            if (!IsSha256(options.PackageSha256) || !IsSha256(options.ExpectedExecutableSha256) ||
+                !Version.TryParse(options.TargetVersion, out var packageVersion) || packageVersion <= new Version(0, 0))
+            {
+                throw new ArgumentException("The package updater received invalid release metadata.");
+            }
+            if (options.ResumePhase != "prepared" && options.ResumePhase != "replaced" &&
+                options.ResumePhase != "verified" && options.ResumePhase != "rollback")
+            {
+                throw new ArgumentException("The package updater resume phase is invalid.");
+            }
+            var expectedPackageDirectory = NormalizeDirectory(GetUpdateStateDirectory(options.ApplicationDirectory));
+            if (!NormalizeDirectory(Path.GetDirectoryName(options.PackagePath))
+                .Equals(expectedPackageDirectory, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("The package path does not belong to the repository state directory.");
+            }
+        }
+        else
+        {
+            options.ExpectedCommit = RequireOption(values, "--expected");
+            options.TargetCommit = RequireOption(values, "--target");
+            if (!Directory.Exists(Path.Combine(options.ApplicationDirectory, ".git")))
+            {
+                throw new DirectoryNotFoundException("The repository Git directory was not found.");
+            }
+            if (!IsCommitHash(options.ExpectedCommit) || !IsCommitHash(options.TargetCommit))
+            {
+                throw new ArgumentException("The updater received an invalid commit hash.");
+            }
+            if (options.ResumePhase != "legacy" && options.ResumePhase != "prepared" &&
+                options.ResumePhase != "merged" &&
+                options.ResumePhase != "verified" && options.ResumePhase != "launching" &&
+                options.ResumePhase != "rollback")
+            {
+                throw new ArgumentException("The updater resume phase is invalid.");
+            }
         }
         var expectedStateDirectory = GetUpdateStateDirectory(options.ApplicationDirectory);
         if (!string.Equals(
@@ -1236,6 +1476,46 @@ internal static class Program
         AddOption(arguments, "--keeper-pid", keeperProcessId.ToString());
         AddOption(arguments, "--expected", expectedCommit);
         AddOption(arguments, "--target", targetCommit);
+        AddOption(arguments, "--resume-phase", resumePhase);
+        AddOption(arguments, "--handoff-ready", paths.HandoffReadyPath);
+        AddOption(arguments, "--app-ready", paths.AppReadyPath);
+        AddOption(arguments, "--log", paths.LogPath);
+        AddOption(arguments, "--result", paths.ResultPath);
+        AddOption(arguments, "--token", paths.Token);
+        return new ProcessStartInfo
+        {
+            FileName = helper,
+            Arguments = arguments.ToString(),
+            WorkingDirectory = applicationDirectory,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WindowStyle = ProcessWindowStyle.Normal,
+        };
+    }
+
+    private static ProcessStartInfo CreatePackageUpdaterStartInfo(
+        string helper,
+        string applicationDirectory,
+        int parentProcessId,
+        int keeperProcessId,
+        string expectedExecutableSha256,
+        string targetVersion,
+        string packagePath,
+        string packageSha256,
+        string resumePhase,
+        UpdatePaths paths
+    )
+    {
+        var arguments = new StringBuilder();
+        AddArgument(arguments, "--package-update");
+        AddOption(arguments, "--repo", applicationDirectory);
+        AddOption(arguments, "--state-dir", paths.StateDirectory);
+        AddOption(arguments, "--parent-pid", parentProcessId.ToString());
+        AddOption(arguments, "--keeper-pid", keeperProcessId.ToString());
+        AddOption(arguments, "--package", packagePath);
+        AddOption(arguments, "--package-sha256", packageSha256);
+        AddOption(arguments, "--expected-exe-sha256", expectedExecutableSha256);
+        AddOption(arguments, "--target-version", targetVersion);
         AddOption(arguments, "--resume-phase", resumePhase);
         AddOption(arguments, "--handoff-ready", paths.HandoffReadyPath);
         AddOption(arguments, "--app-ready", paths.AppReadyPath);
@@ -1511,7 +1791,8 @@ internal static class Program
         }
         var versionTwo = parts.Length == 5 && parts[0] == "v2";
         var versionThree = parts.Length == 6 && parts[0] == PendingStateVersion;
-        if (!versionTwo && !versionThree)
+        var versionFour = parts.Length == 9 && parts[0] == PackagePendingStateVersion;
+        if (!versionTwo && !versionThree && !versionFour)
         {
             throw new InvalidDataException("The pending update marker is invalid.");
         }
@@ -1533,6 +1814,45 @@ internal static class Program
         {
             throw new InvalidDataException("The pending update belongs to another repository.");
         }
+        if (versionFour)
+        {
+            if (parts[2] != "package" || !IsSha256(parts[3]) || !IsSha256(parts[6]) ||
+                !Version.TryParse(parts[4], out var packageVersion) || packageVersion <= new Version(0, 0) ||
+                string.IsNullOrWhiteSpace(parts[5]) || string.IsNullOrWhiteSpace(parts[8]))
+            {
+                throw new InvalidDataException("The package update marker is invalid.");
+            }
+            string packagePath;
+            try
+            {
+                packagePath = Encoding.UTF8.GetString(Convert.FromBase64String(parts[7]));
+            }
+            catch (Exception error)
+            {
+                throw new InvalidDataException("The package update path is invalid.", error);
+            }
+            var expectedPackageDirectory = NormalizeDirectory(GetUpdateStateDirectory(applicationDirectory));
+            if (!string.Equals(
+                NormalizeDirectory(Path.GetDirectoryName(packagePath)),
+                expectedPackageDirectory,
+                StringComparison.OrdinalIgnoreCase
+            ))
+            {
+                throw new InvalidDataException("The package update belongs to another state directory.");
+            }
+            return new PendingUpdateState
+            {
+                ApplicationDirectory = NormalizeDirectory(applicationDirectory),
+                Mode = "package",
+                ExpectedExecutableSha256 = parts[3],
+                TargetVersion = parts[4],
+                Token = parts[5],
+                PackageSha256 = parts[6],
+                PackagePath = packagePath,
+                Phase = parts[8],
+            };
+        }
+
         var token = versionThree ? parts[4] : "legacy-v2";
         var phase = versionThree ? parts[5] : parts[4];
         if (!IsCommitHash(parts[2]) || !IsCommitHash(parts[3]) ||
@@ -1543,6 +1863,7 @@ internal static class Program
         return new PendingUpdateState
         {
             ApplicationDirectory = NormalizeDirectory(applicationDirectory),
+            Mode = "git",
             ExpectedCommit = parts[2],
             TargetCommit = parts[3],
             Token = token,
@@ -1555,6 +1876,17 @@ internal static class Program
         var content = PendingStateVersion + "|" +
             Convert.ToBase64String(Encoding.UTF8.GetBytes(options.ApplicationDirectory)) + "|" +
             options.ExpectedCommit + "|" + options.TargetCommit + "|" + options.Token + "|" + phase;
+        WriteTextAtomically(GetUpdatePendingPath(options.ApplicationDirectory), content);
+        return content;
+    }
+
+    private static string WritePackagePendingUpdateState(UpdateOptions options, string phase)
+    {
+        var content = PackagePendingStateVersion + "|" +
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(options.ApplicationDirectory)) + "|package|" +
+            options.ExpectedExecutableSha256 + "|" + options.TargetVersion + "|" + options.Token + "|" +
+            options.PackageSha256 + "|" +
+            Convert.ToBase64String(Encoding.UTF8.GetBytes(options.PackagePath)) + "|" + phase;
         WriteTextAtomically(GetUpdatePendingPath(options.ApplicationDirectory), content);
         return content;
     }
@@ -1624,6 +1956,18 @@ internal static class Program
     private static bool IsCommitHash(string value)
     {
         if (value == null || value.Length != 40) return false;
+        foreach (var character in value)
+        {
+            if (!((character >= '0' && character <= '9') ||
+                (character >= 'a' && character <= 'f') ||
+                (character >= 'A' && character <= 'F'))) return false;
+        }
+        return true;
+    }
+
+    private static bool IsSha256(string value)
+    {
+        if (value == null || value.Length != 64) return false;
         foreach (var character in value)
         {
             if (!((character >= '0' && character <= '9') ||
@@ -1997,8 +2341,13 @@ internal static class Program
         public string StateDirectory;
         public int ParentProcessId;
         public int KeeperProcessId;
+        public string Mode;
         public string ExpectedCommit;
         public string TargetCommit;
+        public string ExpectedExecutableSha256;
+        public string TargetVersion;
+        public string PackagePath;
+        public string PackageSha256;
         public string HandoffReadyPath;
         public string AppReadyPath;
         public string LogPath;
@@ -2010,8 +2359,13 @@ internal static class Program
     private sealed class PendingUpdateState
     {
         public string ApplicationDirectory;
+        public string Mode;
         public string ExpectedCommit;
         public string TargetCommit;
+        public string ExpectedExecutableSha256;
+        public string TargetVersion;
+        public string PackageSha256;
+        public string PackagePath;
         public string Token;
         public string Phase;
     }
@@ -2181,6 +2535,7 @@ internal static class Program
         "src/launcher/icon.ico",
     };
     private const string PendingStateVersion = "v3";
+    private const string PackagePendingStateVersion = "v4";
     private const string UpdateBranch = "main";
     private const string UpdateStateDirectoryName = "updates";
     private const string UpdateLockFileName = "update.lock";

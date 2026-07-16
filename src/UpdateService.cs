@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -22,6 +23,8 @@ internal sealed class UpdateService
     private readonly Action stateChanged;
     private readonly CancellationToken applicationToken;
     private int checking;
+
+    private const string ReleaseManifestUrl = "https://github.com/naksipayila/codex-tracker/releases/latest/download/latest.json";
 
     public bool IsChecking => Volatile.Read(ref checking) != 0;
     public bool RepairNeeded => File.Exists(GetPendingPath());
@@ -44,7 +47,10 @@ internal sealed class UpdateService
         {
             applicationToken.ThrowIfCancellationRequested();
             if (!Directory.Exists(Path.Combine(applicationDirectory, ".git")))
-                throw new InvalidOperationException("Automatic updates require a Git clone of the repository.");
+            {
+                await CheckReleaseAsync(startup);
+                return;
+            }
             var branch = (await RunGitAsync(["branch", "--show-current"])).Output.Trim();
             if (branch != "main") throw new InvalidOperationException($"Automatic updates require the main branch. The current branch is {branch}.");
             var status = (await RunGitAsync(["status", "--porcelain", "--untracked-files=all"])).Output.Trim();
@@ -92,6 +98,173 @@ internal sealed class UpdateService
             Interlocked.Exchange(ref checking, 0);
             stateChanged();
         }
+    }
+
+    private async Task CheckReleaseAsync(bool startup)
+    {
+        var manifest = await ReadReleaseManifestAsync();
+        var currentVersion = GetCurrentVersion();
+        if (manifest.Version <= currentVersion && !RepairNeeded)
+        {
+            if (!startup) System.Windows.MessageBox.Show("Codex Tracker is up to date.", "Codex Tracker",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+            return;
+        }
+
+        var details = manifest.Notes.Length == 0
+            ? $"Codex Tracker {manifest.Version} is available." + Environment.NewLine + Environment.NewLine +
+                "The application will close, verify the update, and restart."
+            : "What's new:" + Environment.NewLine + manifest.Notes + Environment.NewLine + Environment.NewLine +
+                "The application will close, verify the update, and restart.";
+        var confirmation = System.Windows.MessageBox.Show(
+            details,
+            "Update Codex Tracker",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question,
+            MessageBoxResult.No
+        );
+        if (confirmation == MessageBoxResult.Yes)
+            await BeginReleaseUpdateAsync(manifest);
+    }
+
+    private async Task<ReleaseManifest> ReadReleaseManifestAsync()
+    {
+        using var client = CreateHttpClient();
+        using var response = await client.GetAsync(ReleaseManifestUrl, applicationToken);
+        response.EnsureSuccessStatusCode();
+        var json = await response.Content.ReadAsStringAsync(applicationToken);
+        var document = JsonSerializer.Deserialize<ReleaseManifestDocument>(json, new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+        });
+        if (document == null || !Version.TryParse(document.Version, out var version) || version <= new Version(0, 0) ||
+            string.IsNullOrWhiteSpace(document.PackageUrl) || !IsSha256(document.Sha256))
+        {
+            throw new InvalidDataException("The release update manifest is invalid.");
+        }
+        if (!Uri.TryCreate(document.PackageUrl, UriKind.Absolute, out var packageUri) ||
+            packageUri.Scheme != Uri.UriSchemeHttps ||
+            !string.Equals(packageUri.Host, "github.com", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidDataException("The release update package URL is not trusted.");
+        }
+        return new ReleaseManifest(version, packageUri, document.Sha256.ToLowerInvariant(),
+            SanitizeReleaseNotes(document.Notes));
+    }
+
+    private async Task BeginReleaseUpdateAsync(ReleaseManifest manifest)
+    {
+        var token = Guid.NewGuid().ToString("N");
+        var stateDirectory = GetStateDirectory();
+        var package = Path.Combine(stateDirectory, $"release-{token}.exe");
+        Directory.CreateDirectory(stateDirectory);
+        try
+        {
+            await DownloadReleasePackageAsync(manifest, package);
+            var temporaryDirectory = Path.Combine(Path.GetTempPath(), "CodexUsageTray");
+            Directory.CreateDirectory(temporaryDirectory);
+            var helper = Path.Combine(temporaryDirectory, $"updater-{token}.exe");
+            File.Copy(Path.Combine(applicationDirectory, "Codex Tracker.exe"), helper, true);
+            var handoff = Path.Combine(stateDirectory, $"update-handoff-{token}.ready");
+            var appReady = Path.Combine(stateDirectory, $"update-app-{token}.ready");
+            var log = Path.Combine(stateDirectory, "update.log");
+            var result = GetResultPath();
+            TryDelete(handoff);
+            TryDelete(appReady);
+
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = helper,
+                WorkingDirectory = applicationDirectory,
+                UseShellExecute = false,
+                CreateNoWindow = false,
+            };
+            Add(startInfo, "--package-update");
+            Add(startInfo, "--repo", applicationDirectory);
+            Add(startInfo, "--state-dir", stateDirectory);
+            Add(startInfo, "--parent-pid", Environment.ProcessId.ToString());
+            Add(startInfo, "--keeper-pid", getKeeperProcessId().ToString());
+            Add(startInfo, "--package", package);
+            Add(startInfo, "--package-sha256", manifest.Sha256);
+            Add(startInfo, "--expected-exe-sha256", ComputeFileSha256(Path.Combine(applicationDirectory, "Codex Tracker.exe")));
+            Add(startInfo, "--target-version", manifest.Version.ToString(3));
+            Add(startInfo, "--handoff-ready", handoff);
+            Add(startInfo, "--app-ready", appReady);
+            Add(startInfo, "--log", log);
+            Add(startInfo, "--result", result);
+            Add(startInfo, "--token", token);
+            using var updater = Process.Start(startInfo) ?? throw new InvalidOperationException("Windows did not start the update helper.");
+            var deadline = DateTime.UtcNow.AddSeconds(10);
+            while (DateTime.UtcNow < deadline)
+            {
+                if (updater.HasExited) throw new InvalidOperationException($"The update helper exited before handoff ({updater.ExitCode}).");
+                try
+                {
+                    if (File.Exists(handoff) && File.ReadAllText(handoff).Trim() == token)
+                    {
+                        TryDelete(handoff);
+                        prepareForUpdate();
+                        return;
+                    }
+                }
+                catch
+                {
+                }
+                await Task.Delay(50, applicationToken);
+            }
+            throw new TimeoutException("The update helper did not become ready in time.");
+        }
+        catch
+        {
+            TryDelete(package);
+            throw;
+        }
+    }
+
+    private async Task DownloadReleasePackageAsync(ReleaseManifest manifest, string packagePath)
+    {
+        using var client = CreateHttpClient();
+        using var response = await client.GetAsync(manifest.PackageUri, HttpCompletionOption.ResponseHeadersRead, applicationToken);
+        response.EnsureSuccessStatusCode();
+        await using (var input = await response.Content.ReadAsStreamAsync(applicationToken))
+        await using (var output = new FileStream(packagePath, FileMode.Create, FileAccess.Write, FileShare.None))
+        {
+            await input.CopyToAsync(output, applicationToken);
+        }
+        var actualHash = ComputeFileSha256(packagePath);
+        if (!string.Equals(actualHash, manifest.Sha256, StringComparison.OrdinalIgnoreCase))
+        {
+            TryDelete(packagePath);
+            throw new InvalidDataException("The downloaded release failed SHA-256 verification.");
+        }
+    }
+
+    private static HttpClient CreateHttpClient()
+    {
+        var client = new HttpClient { Timeout = TimeSpan.FromMinutes(2) };
+        client.DefaultRequestHeaders.UserAgent.ParseAdd("Codex-Tracker-Updater/1.0");
+        return client;
+    }
+
+    private static Version GetCurrentVersion() =>
+        typeof(UpdateService).Assembly.GetName().Version ?? new Version(0, 0);
+
+    private static string SanitizeReleaseNotes(string notes)
+    {
+        if (string.IsNullOrWhiteSpace(notes)) return "";
+        var value = new string(notes.Select(character => char.IsControl(character) ? ' ' : character).ToArray());
+        value = string.Join(" ", value.Split((char[])null, StringSplitOptions.RemoveEmptyEntries));
+        return value.Length > 1200 ? value[..1197] + "..." : value;
+    }
+
+    private static bool IsSha256(string value) =>
+        !string.IsNullOrWhiteSpace(value) && value.Length == 64 && value.All(character =>
+            character is >= '0' and <= '9' or >= 'a' and <= 'f' or >= 'A' and <= 'F');
+
+    private static string ComputeFileSha256(string path)
+    {
+        using var stream = File.OpenRead(path);
+        return Convert.ToHexString(SHA256.HashData(stream)).ToLowerInvariant();
     }
 
     public UpdateResult? ReadResult()
@@ -338,4 +511,14 @@ internal sealed class UpdateService
     {
         try { File.Delete(path); } catch { }
     }
+
+    private sealed class ReleaseManifestDocument
+    {
+        public string Version { get; set; }
+        public string PackageUrl { get; set; }
+        public string Sha256 { get; set; }
+        public string Notes { get; set; }
+    }
+
+    private readonly record struct ReleaseManifest(Version Version, Uri PackageUri, string Sha256, string Notes);
 }

@@ -1,2 +1,0 @@
-Automatic update test marker
-This file verifies that the updater pulled the latest commit.

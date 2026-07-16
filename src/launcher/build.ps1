@@ -1,8 +1,12 @@
 param(
-    [string] $OutputPath = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "Codex Tracker.exe")
+    [string] $OutputPath = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "Codex Tracker.exe"),
+    [switch] $SelfContained,
+    [string] $Version = "1.0.0"
 )
 
 $ErrorActionPreference = "Stop"
+$Version = $Version.TrimStart("v")
+if ($Version -notmatch '^\d+\.\d+\.\d+$') { throw "Build version must use numeric major.minor.patch format: $Version" }
 $repositoryRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $projectPath = Join-Path (Split-Path -Parent $PSScriptRoot) "CodexUsageTray.csproj"
 $OutputPath = [IO.Path]::GetFullPath($OutputPath)
@@ -48,15 +52,19 @@ try {
 }
 
 $publishDirectory = Join-Path ([IO.Path]::GetTempPath()) ("CodexUsageTray-Publish-" + [guid]::NewGuid().ToString("N"))
+$selfContainedValue = if ($SelfContained) { "true" } else { "false" }
+$includeNativeLibrariesValue = if ($SelfContained) { "true" } else { "false" }
 try {
     Push-Location -LiteralPath $repositoryRoot
     try {
         & dotnet publish $projectPath `
             --configuration Release `
             --runtime win-x64 `
-            --self-contained false `
+            --self-contained $selfContainedValue `
             --output $publishDirectory `
             -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=$includeNativeLibrariesValue `
+            -p:Version=$Version `
             -p:InformationalVersion="build-$buildHash" `
             -p:DebugType=None `
             -p:DebugSymbols=false
