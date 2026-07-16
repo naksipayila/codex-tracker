@@ -52,14 +52,14 @@ jobs:
           if ($version -notmatch '^\d+\.\d+\.\d+$') {
             throw "Release version must use numeric major.minor.patch format: $version"
           }
-          $portable = Join-Path $env:RUNNER_TEMP "Codex.Tracker.exe"
+          $portable = Join-Path $env:RUNNER_TEMP "CodexTracker.exe"
           .\src\launcher\build.ps1 -OutputPath $portable -SelfContained -Version $version
           "version=$version" >> $env:GITHUB_OUTPUT
           "portable=$portable" >> $env:GITHUB_OUTPUT
 
           $packageHash = (Get-FileHash -LiteralPath $portable -Algorithm SHA256).Hash.ToLowerInvariant()
           $tag = "v$version"
-          $packageUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/Codex.Tracker.exe"
+          $packageUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/CodexTracker.exe"
           $manifest = [ordered]@{
             version = $version
             packageUrl = $packageUrl
@@ -100,14 +100,7 @@ jobs:
           MANIFEST: ${{ steps.package.outputs.manifest }}
         run: |
           $tag = "v$env:VERSION"
-          $portableHashFile = "$env:PORTABLE.sha256"
-          $portableHash = (Get-FileHash -LiteralPath $env:PORTABLE -Algorithm SHA256).Hash.ToLowerInvariant()
-          [IO.File]::WriteAllText(
-            $portableHashFile,
-            $portableHash + " *Codex.Tracker.exe" + [Environment]::NewLine,
-            (New-Object Text.UTF8Encoding($false))
-          )
-          gh release create $tag $env:PORTABLE $portableHashFile $env:MANIFEST `
+          gh release create $tag $env:PORTABLE $env:MANIFEST `
             --repo $env:GITHUB_REPOSITORY `
             --title "Codex Tracker $env:VERSION" `
             --generate-notes

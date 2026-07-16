@@ -164,7 +164,7 @@ internal sealed class UpdateService
             var temporaryDirectory = Path.Combine(Path.GetTempPath(), "CodexUsageTray");
             Directory.CreateDirectory(temporaryDirectory);
             var helper = Path.Combine(temporaryDirectory, $"updater-{token}.exe");
-            File.Copy(Path.Combine(applicationDirectory, "Codex Tracker.exe"), helper, true);
+            File.Copy(Path.Combine(applicationDirectory, "CodexTracker.exe"), helper, true);
             var handoff = Path.Combine(stateDirectory, $"update-handoff-{token}.ready");
             var appReady = Path.Combine(stateDirectory, $"update-app-{token}.ready");
             var log = Path.Combine(stateDirectory, "update.log");
@@ -186,7 +186,7 @@ internal sealed class UpdateService
             Add(startInfo, "--keeper-pid", getKeeperProcessId().ToString());
             Add(startInfo, "--package", package);
             Add(startInfo, "--package-sha256", manifest.Sha256);
-            Add(startInfo, "--expected-exe-sha256", ComputeFileSha256(Path.Combine(applicationDirectory, "Codex Tracker.exe")));
+            Add(startInfo, "--expected-exe-sha256", ComputeFileSha256(Path.Combine(applicationDirectory, "CodexTracker.exe")));
             Add(startInfo, "--target-version", manifest.Version.ToString(3));
             Add(startInfo, "--handoff-ready", handoff);
             Add(startInfo, "--app-ready", appReady);
@@ -292,7 +292,7 @@ internal sealed class UpdateService
         foreach (var path in new[]
         {
             "global.json",
-            "Codex Tracker.exe",
+            "CodexTracker.exe",
             "src/CodexUsageTray.csproj",
             "src/app.manifest",
             "src/NativeApplication.cs",
@@ -332,7 +332,7 @@ internal sealed class UpdateService
         Directory.CreateDirectory(stateDirectory);
         Directory.CreateDirectory(temporaryDirectory);
         var helper = Path.Combine(temporaryDirectory, $"updater-{token}.exe");
-        File.Copy(Path.Combine(applicationDirectory, "Codex Tracker.exe"), helper, true);
+        File.Copy(Path.Combine(applicationDirectory, "CodexTracker.exe"), helper, true);
         var handoff = Path.Combine(stateDirectory, $"update-handoff-{token}.ready");
         var appReady = Path.Combine(stateDirectory, $"update-app-{token}.ready");
         var log = Path.Combine(stateDirectory, "update.log");

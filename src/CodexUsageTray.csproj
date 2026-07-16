@@ -6,7 +6,7 @@
     <UseWindowsForms>true</UseWindowsForms>
     <EnableDefaultApplicationDefinition>false</EnableDefaultApplicationDefinition>
     <StartupObject>Program</StartupObject>
-    <AssemblyName>Codex Tracker</AssemblyName>
+    <AssemblyName>CodexTracker</AssemblyName>
     <RootNamespace>CodexUsageTray</RootNamespace>
     <ApplicationIcon>launcher\icon.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>

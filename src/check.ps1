@@ -6,12 +6,12 @@ $ErrorActionPreference = "Stop"
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $projectPath = Join-Path $PSScriptRoot "CodexUsageTray.csproj"
 $testProject = Join-Path $repositoryRoot "tests\native\CodexUsageTray.NativeTests.csproj"
-$launcher = Join-Path $repositoryRoot "Codex Tracker.exe"
+$launcher = Join-Path $repositoryRoot "CodexTracker.exe"
 $tempDirectory = Join-Path ([IO.Path]::GetTempPath()) ("CodexUsageTray-Check-" + [guid]::NewGuid().ToString("N"))
-if (![IO.File]::Exists($launcher)) { throw "Codex Tracker.exe is missing." }
+if (![IO.File]::Exists($launcher)) { throw "CodexTracker.exe is missing." }
 $signature = [IO.File]::ReadAllBytes($launcher)
 if ($signature.Length -lt 2 -or $signature[0] -ne 0x4d -or $signature[1] -ne 0x5a) {
-    throw "Codex Tracker.exe is not a Windows executable."
+    throw "CodexTracker.exe is not a Windows executable."
 }
 
 try {
@@ -25,7 +25,7 @@ try {
     & dotnet run --project $testProject --configuration Release
     if ($LASTEXITCODE -ne 0) { throw "Native unit tests failed." }
 
-    $sourceLauncher = Join-Path $tempDirectory "source-Codex Tracker.exe"
+    $sourceLauncher = Join-Path $tempDirectory "source-CodexTracker.exe"
     & (Join-Path $PSScriptRoot "launcher\build.ps1") -OutputPath $sourceLauncher
 
     $responses = @()
@@ -46,7 +46,7 @@ try {
         $responses += $response.Substring($token.Length + 1)
     }
     if ($responses[0] -ne $responses[1]) {
-        throw "The tracked Codex Tracker.exe does not match the native build inputs."
+        throw "The tracked CodexTracker.exe does not match the native build inputs."
     }
     $smokeToken = [guid]::NewGuid().ToString("N")
     $smokeReady = Join-Path $tempDirectory ("native-smoke-" + $smokeToken + ".ready")

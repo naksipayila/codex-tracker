@@ -502,7 +502,7 @@ internal sealed class NativeAppController : IDisposable
         if (handle == IntPtr.Zero) return;
         var startInfo = new ProcessStartInfo
         {
-            FileName = Path.Combine(applicationDirectory, "Codex Tracker.exe"),
+            FileName = Path.Combine(applicationDirectory, "CodexTracker.exe"),
             WorkingDirectory = applicationDirectory,
             UseShellExecute = false,
             CreateNoWindow = true,
@@ -823,7 +823,7 @@ internal static class StartupRegistration
         using var key = Registry.CurrentUser.CreateSubKey(RegistryPath, true)
             ?? throw new InvalidOperationException("The Windows startup registry key could not be opened.");
         if (enabled)
-            key.SetValue(ValueName, "\"" + Path.Combine(applicationDirectory, "Codex Tracker.exe") + "\"",
+            key.SetValue(ValueName, "\"" + Path.Combine(applicationDirectory, "CodexTracker.exe") + "\"",
                 RegistryValueKind.String);
         else key.DeleteValue(ValueName, false);
 

@@ -1,5 +1,5 @@
 param(
-    [string] $OutputPath = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "Codex Tracker.exe"),
+    [string] $OutputPath = (Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "CodexTracker.exe"),
     [switch] $SelfContained,
     [string] $Version = "1.0.0"
 )
@@ -73,8 +73,8 @@ try {
         Pop-Location
     }
     if ($publishExitCode -ne 0) { throw "Native application compilation failed with exit code $publishExitCode." }
-    $publishedExecutable = Join-Path $publishDirectory "Codex Tracker.exe"
-    if (![IO.File]::Exists($publishedExecutable)) { throw "The native publish did not produce Codex Tracker.exe." }
+    $publishedExecutable = Join-Path $publishDirectory "CodexTracker.exe"
+    if (![IO.File]::Exists($publishedExecutable)) { throw "The native publish did not produce CodexTracker.exe." }
     [IO.File]::Copy($publishedExecutable, $OutputPath, $true)
 } finally {
     if ([IO.Directory]::Exists($publishDirectory)) {

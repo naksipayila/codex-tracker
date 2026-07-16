@@ -525,7 +525,7 @@ internal static class Program
         bool recovery
     )
     {
-        var executable = Path.Combine(applicationDirectory, "Codex Tracker.exe");
+        var executable = Path.Combine(applicationDirectory, "CodexTracker.exe");
         if (!File.Exists(executable)) throw new FileNotFoundException("The native application is missing.", executable);
 
         var startInfo = new ProcessStartInfo
@@ -580,7 +580,7 @@ internal static class Program
                 if (pending.Mode == "package")
                 {
                     TryDeleteFile(pending.PackagePath);
-                    TryDeleteFile(Path.Combine(applicationDirectory, ".Codex Tracker.exe.update-backup"));
+                    TryDeleteFile(Path.Combine(applicationDirectory, ".CodexTracker.exe.update-backup"));
                 }
                 StartApplication(applicationDirectory, null, null, pending.Phase == "rolled-back");
                 return;
@@ -1049,7 +1049,7 @@ internal static class Program
     {
         reportProgress("Checking release package...", 25);
         WaitForRepositoryProcessesToExit(options.ApplicationDirectory, RepositoryExitTimeoutMs);
-        var launcher = Path.Combine(options.ApplicationDirectory, "Codex Tracker.exe");
+        var launcher = Path.Combine(options.ApplicationDirectory, "CodexTracker.exe");
         if (!File.Exists(launcher)) throw new FileNotFoundException("The installed launcher is missing.", launcher);
         if (!File.Exists(options.PackagePath)) throw new FileNotFoundException("The downloaded release package is missing.", options.PackagePath);
         if (!string.Equals(ComputeFileSha256(options.PackagePath), options.PackageSha256, StringComparison.OrdinalIgnoreCase))
@@ -1063,7 +1063,7 @@ internal static class Program
             if (!string.Equals(currentHash, options.ExpectedExecutableSha256, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("The installed executable changed before the update started.");
             reportProgress("Applying update files...", 45);
-            var replacement = Path.Combine(options.ApplicationDirectory, ".Codex Tracker.exe." + options.Token + ".new");
+            var replacement = Path.Combine(options.ApplicationDirectory, ".CodexTracker.exe." + options.Token + ".new");
             var backup = GetPackageBackupPath(options);
             TryDeleteFile(replacement);
             TryDeleteFile(backup);
@@ -1090,11 +1090,11 @@ internal static class Program
         reportProgress("Restoring previous version...", 92);
         pendingContent = WritePackagePendingUpdateState(options, "rollback");
         WaitForRepositoryProcessesToExit(options.ApplicationDirectory, RepositoryExitTimeoutMs);
-        var launcher = Path.Combine(options.ApplicationDirectory, "Codex Tracker.exe");
+        var launcher = Path.Combine(options.ApplicationDirectory, "CodexTracker.exe");
         var backup = GetPackageBackupPath(options);
         if (File.Exists(backup))
         {
-            var restore = Path.Combine(options.ApplicationDirectory, ".Codex Tracker.exe." + options.Token + ".restore");
+            var restore = Path.Combine(options.ApplicationDirectory, ".CodexTracker.exe." + options.Token + ".restore");
             TryDeleteFile(restore);
             File.Copy(backup, restore, true);
             File.Replace(restore, launcher, null, true);
@@ -1187,7 +1187,7 @@ internal static class Program
     {
         try
         {
-            var launcher = Path.Combine(applicationDirectory, "Codex Tracker.exe");
+            var launcher = Path.Combine(applicationDirectory, "CodexTracker.exe");
             return File.Exists(launcher) && string.Equals(
                 ComputeFileSha256(launcher),
                 expectedHash,
@@ -1201,7 +1201,7 @@ internal static class Program
     }
 
     private static string GetPackageBackupPath(UpdateOptions options) =>
-        Path.Combine(options.ApplicationDirectory, ".Codex Tracker.exe.update-backup");
+        Path.Combine(options.ApplicationDirectory, ".CodexTracker.exe.update-backup");
 
     private static string ComputeFileSha256(string path)
     {
@@ -1217,13 +1217,13 @@ internal static class Program
         if (options.Mode != "package") return;
         TryDeleteFile(options.PackagePath);
         TryDeleteFile(GetPackageBackupPath(options));
-        TryDeleteFile(Path.Combine(options.ApplicationDirectory, ".Codex Tracker.exe." + options.Token + ".new"));
-        TryDeleteFile(Path.Combine(options.ApplicationDirectory, ".Codex Tracker.exe." + options.Token + ".restore"));
+        TryDeleteFile(Path.Combine(options.ApplicationDirectory, ".CodexTracker.exe." + options.Token + ".new"));
+        TryDeleteFile(Path.Combine(options.ApplicationDirectory, ".CodexTracker.exe." + options.Token + ".restore"));
     }
 
     private static void ValidateLauncher(UpdateOptions options)
     {
-        var launcher = Path.Combine(options.ApplicationDirectory, "Codex Tracker.exe");
+        var launcher = Path.Combine(options.ApplicationDirectory, "CodexTracker.exe");
         if (!File.Exists(launcher)) throw new FileNotFoundException("The updated launcher is missing.", launcher);
         var token = Guid.NewGuid().ToString("N");
         var readyPath = Path.Combine(options.StateDirectory, "launcher-self-test-" + token + ".ready");
@@ -1236,7 +1236,7 @@ internal static class Program
                 options.ApplicationDirectory,
                 LauncherSelfTestTimeoutMs
             );
-            AppendCommandResult(options.LogPath, "Codex Tracker.exe --self-test", result);
+            AppendCommandResult(options.LogPath, "CodexTracker.exe --self-test", result);
             var response = File.Exists(readyPath) ? File.ReadAllText(readyPath).Trim() : "";
             var expectedResponse = token + "|" + GetLauncherBuildHash(options.ApplicationDirectory);
             if (result.ExitCode != 0 || !string.Equals(response, expectedResponse, StringComparison.Ordinal))

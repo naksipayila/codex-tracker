@@ -186,7 +186,7 @@ function Invoke-UpdateCase([string] $Name, [string] $Fault) {
     Copy-NativeSources $repository
     Write-Text (Join-Path $repository ".gitignore") "bin/`nobj/`n"
     Write-Text (Join-Path $repository "src\version.txt") "A`n"
-    Build-FixtureLauncher $repository (Join-Path $repository "Codex Tracker.exe")
+    Build-FixtureLauncher $repository (Join-Path $repository "CodexTracker.exe")
     if ($Fault -eq "source-migration") {
         foreach ($relativePath in $script:BuildInputs) {
             Remove-Item -LiteralPath (Join-Path $repository ($relativePath.Replace("/", [IO.Path]::DirectorySeparatorChar))) -Force
@@ -206,9 +206,9 @@ function Invoke-UpdateCase([string] $Name, [string] $Fault) {
     if ($Fault -eq "job-containment") {
         Enable-ContainmentProbe (Join-Path $repository "src\launcher\Program.cs")
     }
-    Build-FixtureLauncher $repository (Join-Path $repository "Codex Tracker.exe")
+    Build-FixtureLauncher $repository (Join-Path $repository "CodexTracker.exe")
     if ($Fault -eq "bad-launcher") {
-        [IO.File]::Copy($script:InvalidLauncher, (Join-Path $repository "Codex Tracker.exe"), $true)
+        [IO.File]::Copy($script:InvalidLauncher, (Join-Path $repository "CodexTracker.exe"), $true)
     }
     Invoke-Git $repository @("add", ".") | Out-Null
     Invoke-Git $repository @("commit", "--quiet", "-m", "fixture B") | Out-Null
@@ -249,7 +249,7 @@ function Invoke-UpdateCase([string] $Name, [string] $Fault) {
                 $encoded = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($identity))
                 Write-Text (Join-Path $stateDirectory "update.pending") "v3|$encoded|$expected|$target|$token|rollback"
             }
-            $startInfo.FileName = Join-Path $repository "Codex Tracker.exe"
+            $startInfo.FileName = Join-Path $repository "CodexTracker.exe"
         } else {
             $arguments = @(
                 "--update", "--repo", $repository, "--state-dir", $stateDirectory,
@@ -329,7 +329,7 @@ if (Test-Path -LiteralPath $ScratchRoot) {
     Remove-Item -LiteralPath $ScratchRoot -Recurse -Force
 }
 [IO.Directory]::CreateDirectory($ScratchRoot) | Out-Null
-$script:BuiltLauncher = Join-Path $SourceRoot "Codex Tracker.exe"
+$script:BuiltLauncher = Join-Path $SourceRoot "CodexTracker.exe"
 $sourceCheckLauncher = Join-Path $ScratchRoot "source-check-launcher.exe"
 $script:InvalidLauncher = Join-Path $ScratchRoot "invalid-launcher.exe"
 $script:ContainedChild = Join-Path $ScratchRoot "contained-child.exe"
@@ -346,7 +346,7 @@ $protocolProcess = Start-Process -FilePath $script:BuiltLauncher -ArgumentList "
 $protocolBuildHash = Get-NativeBuildHash $SourceRoot
 if ($protocolProcess.ExitCode -ne 0 -or !(Test-Path -LiteralPath $protocolReady) -or
     [IO.File]::ReadAllText($protocolReady).Trim() -ne ($protocolToken + "|" + $protocolBuildHash)) {
-    throw "The tracked Codex Tracker.exe does not implement the current native updater protocol."
+    throw "The tracked CodexTracker.exe does not implement the current native updater protocol."
 }
 Remove-Item -LiteralPath $protocolReady -Force
 

@@ -46,7 +46,7 @@ jobs:
         run: |
           $token = [guid]::NewGuid().ToString("N")
           $ready = Join-Path $env:RUNNER_TEMP "launcher-self-test-$token.ready"
-          $process = Start-Process -FilePath ".\Codex Tracker.exe" -ArgumentList "--self-test", "3", $ready, $token -Wait -PassThru
+          $process = Start-Process -FilePath ".\CodexTracker.exe" -ArgumentList "--self-test", "3", $ready, $token -Wait -PassThru
           if ($process.ExitCode -ne 0) { throw "The tracked native application failed its updater protocol self-test." }
           $trackedResponse = (Get-Content -LiteralPath $ready -Raw).Trim()
           Remove-Item -LiteralPath $ready -Force
@@ -62,7 +62,7 @@ jobs:
           }
           $smokeToken = [guid]::NewGuid().ToString("N")
           $smokeReady = Join-Path $env:RUNNER_TEMP "native-smoke-$smokeToken.ready"
-          $smoke = Start-Process -FilePath ".\Codex Tracker.exe" -ArgumentList "--native-smoke-test", $smokeReady, $smokeToken -WorkingDirectory $env:GITHUB_WORKSPACE -Wait -PassThru
+          $smoke = Start-Process -FilePath ".\CodexTracker.exe" -ArgumentList "--native-smoke-test", $smokeReady, $smokeToken -WorkingDirectory $env:GITHUB_WORKSPACE -Wait -PassThru
           if ($smoke.ExitCode -ne 0 -or !(Test-Path -LiteralPath $smokeReady) -or (Get-Content -LiteralPath $smokeReady -Raw).Trim() -ne $smokeToken) {
             throw "The tracked native application failed its WPF readiness smoke test."
           }
