@@ -11,6 +11,7 @@ namespace CodexUsageTray;
 internal sealed class WidgetWindow : Window
 {
     public const double PreferredWidth = 340;
+    private static readonly Color BackgroundColor = Color.FromArgb(235, 0x16, 0x20, 0x2d);
     private static readonly Color LabelColor = Color.FromRgb(0x8e, 0xa9, 0xc7);
     private static readonly Color ValueColor = Color.FromRgb(0x78, 0xe0, 0xb1);
     private static readonly Color ResetColor = Color.FromRgb(0xae, 0xd0, 0xf7);
@@ -42,14 +43,14 @@ internal sealed class WidgetWindow : Window
         WindowStyle = WindowStyle.None;
         ResizeMode = ResizeMode.NoResize;
         AllowsTransparency = true;
-        Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0));
+        Background = new SolidColorBrush(BackgroundColor);
         ShowInTaskbar = false;
         ShowActivated = false;
         Focusable = false;
         SnapsToDevicePixels = true;
         UseLayoutRounding = true;
 
-        var root = new Grid { Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)) };
+        var root = new Grid { Background = new SolidColorBrush(BackgroundColor) };
 
         usageGrid = new Grid { Margin = new Thickness(8, 0, 8, 0), Cursor = Cursors.SizeAll };
         usageGrid.ColumnDefinitions.Add(new ColumnDefinition());
