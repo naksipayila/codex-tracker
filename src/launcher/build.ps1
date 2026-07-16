@@ -19,7 +19,7 @@ $buildInputs = @(
     "src/NativeSettings.cs",
     "src/NativeMethods.cs",
     "src/WidgetWindow.cs",
-    "src/CodexIntegration.cs",
+    "src/NativeTypes.cs",
     "src/LatrixIntegration.cs",
     "src/UpdateService.cs",
     "src/launcher/Program.cs",

@@ -75,14 +75,11 @@ internal static class NativeApplication
 
 internal sealed class NativeAppController : IDisposable
 {
-    private const string CodexUsageUrl = "https://chatgpt.com/codex/settings/usage";
     private const string LatrixUsageUrl = "https://inference.llai.io/dashboard";
     private readonly System.Windows.Application application;
     private readonly string applicationDirectory;
     private readonly CancellationTokenSource lifetime = new();
     private readonly SemaphoreSlim refreshGate = new(1, 1);
-    private readonly SemaphoreSlim clientRestartGate = new(1, 1);
-    private readonly SemaphoreSlim sourceGate = new(1, 1);
     private readonly NativeSettings settings;
     private readonly UpdateService updates;
     private readonly LatrixApiClient latrix = new();
@@ -90,31 +87,21 @@ internal sealed class NativeAppController : IDisposable
     private SettingsPanelWindow settingsPanel;
     private System.Windows.Forms.NotifyIcon tray;
     private Process pinHelper;
-    private Process loginProcess;
-    private CodexAppServerClient codexClient;
     private PeriodicTimer refreshTimer;
     private bool widgetHiddenByUser;
     private bool widgetHiddenForMetrics;
     private bool quitting;
-    private bool loggedIn;
     private bool trayTogglePending;
     private bool openingSettingsPanel;
     private bool settingsPanelClosing;
     private bool settingsPanelRequested;
-    private bool latrixConfigured;
-    private bool openingLatrixDialog;
 
     public NativeAppController(System.Windows.Application application, string applicationDirectory)
     {
         this.application = application;
         this.applicationDirectory = Path.GetFullPath(applicationDirectory).TrimEnd(Path.DirectorySeparatorChar);
         settings = NativeSettings.Load();
-        latrixConfigured = LatrixApiKeyStore.IsConfigured();
-        if (settings.UsageProvider == UsageProvider.Latrix && !latrixConfigured)
-        {
-            settings.UsageProvider = UsageProvider.Codex;
-            settings.SaveWidget();
-        }
+        OpenCodeConfig.RemoveLegacyStoredKey();
         updates = new UpdateService(
             this.applicationDirectory,
             () => pinHelper?.HasExited == false ? pinHelper.Id : 0,
@@ -130,7 +117,7 @@ internal sealed class NativeAppController : IDisposable
         widget.DragCompleted += SaveWidgetPosition;
         widget.Closed += (_, _) => Quit();
         widget.SetMetricVisibility(settings.ShowFiveHour, settings.ShowWeekly);
-        widget.SetUsageLabels(GetPrimaryUsageLabel(), "W");
+        widget.SetUsageLabels("6H", "W");
 
         tray = new System.Windows.Forms.NotifyIcon
         {
@@ -172,7 +159,7 @@ internal sealed class NativeAppController : IDisposable
         }
         ShowUpdateResult();
 
-        _ = StartUsageProviderAsync(lifetime.Token);
+        _ = RefreshLatrixUsageAsync(lifetime.Token);
         refreshTimer = new PeriodicTimer(TimeSpan.FromSeconds(30));
         _ = RunRefreshTimerAsync(lifetime.Token);
         if (settings.UpdateAtStartup && Environment.GetEnvironmentVariable("CODEX_UPDATE_LAUNCH") != "1")
@@ -197,260 +184,43 @@ internal sealed class NativeAppController : IDisposable
         UpdateTray();
     }
 
-    private async Task StartCodexAsync(CancellationToken cancellationToken)
-    {
-        if (settings.UsageProvider != UsageProvider.Codex) return;
-        try
-        {
-            if (!await CodexProcess.IsAvailableAsync(cancellationToken))
-                await CodexProcess.InstallAsync(cancellationToken);
-            if (settings.UsageProvider != UsageProvider.Codex) return;
-            loggedIn = await CodexProcess.IsLoggedInAsync(cancellationToken);
-            if (!loggedIn)
-            {
-                _ = application.Dispatcher.BeginInvoke(UpdateTray);
-                return;
-            }
-            await StartCodexClientAsync(cancellationToken);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
-        catch (Exception error)
-        {
-            if (settings.UsageProvider != UsageProvider.Codex) return;
-            _ = application.Dispatcher.BeginInvoke(() =>
-            {
-                widget.UpdateUsage(UsageDisplay.Empty);
-                System.Windows.MessageBox.Show(
-                    error.Message + Environment.NewLine + Environment.NewLine +
-                    "Install the Codex CLI with the official PowerShell installer:" + Environment.NewLine +
-                    "irm https://chatgpt.com/codex/install.ps1 | iex",
-                    "Codex Tracker", MessageBoxButton.OK, MessageBoxImage.Warning);
-            });
-        }
-    }
-
-    private async Task StartCodexClientAsync(CancellationToken cancellationToken)
-    {
-        if (settings.UsageProvider != UsageProvider.Codex) return;
-        var previous = codexClient;
-        codexClient = null;
-        if (previous != null) await previous.DisposeAsync();
-        var client = new CodexAppServerClient();
-        client.RateLimitsUpdated += () => _ = RefreshLimitsAsync(lifetime.Token);
-        client.Disconnected += () => _ = ReconnectCodexClientAsync(client);
-        try
-        {
-            await client.StartAsync(cancellationToken);
-            codexClient = client;
-            await RefreshLimitsAsync(cancellationToken);
-        }
-        catch
-        {
-            await client.DisposeAsync();
-            throw;
-        }
-    }
-
-    private async Task ReconnectCodexClientAsync(CodexAppServerClient disconnectedClient)
-    {
-        var retryDelay = TimeSpan.FromSeconds(2);
-        try
-        {
-            while (!lifetime.IsCancellationRequested && !quitting && settings.UsageProvider == UsageProvider.Codex)
-            {
-                await Task.Delay(retryDelay, lifetime.Token);
-                await clientRestartGate.WaitAsync(lifetime.Token);
-                try
-                {
-                    if (quitting || settings.UsageProvider != UsageProvider.Codex ||
-                        (codexClient != null && !ReferenceEquals(codexClient, disconnectedClient))) return;
-                    try
-                    {
-                        await StartCodexClientAsync(lifetime.Token);
-                        return;
-                    }
-                    catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
-                    {
-                        throw;
-                    }
-                    catch
-                    {
-                        codexClient = null;
-                    }
-                }
-                finally
-                {
-                    clientRestartGate.Release();
-                }
-                retryDelay = TimeSpan.FromSeconds(Math.Min(30, retryDelay.TotalSeconds * 2));
-            }
-        }
-        catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
-        {
-        }
-        catch
-        {
-            _ = application.Dispatcher.BeginInvoke(() =>
-            {
-                if (settings.UsageProvider == UsageProvider.Codex) widget.UpdateUsage(UsageDisplay.Empty);
-            });
-        }
-    }
-
-    private async Task RefreshLimitsAsync(CancellationToken cancellationToken)
-    {
-        if (settings.UsageProvider != UsageProvider.Codex || codexClient == null ||
-            !await refreshGate.WaitAsync(0, cancellationToken)) return;
-        try
-        {
-            var result = await codexClient.RequestAsync("account/rateLimits/read", null, cancellationToken);
-            var display = RateLimitParser.Project(RateLimitParser.Parse(result), TimeZoneInfo.Local);
-            _ = application.Dispatcher.BeginInvoke(() =>
-            {
-                if (settings.UsageProvider == UsageProvider.Codex) widget.UpdateUsage(display);
-            });
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
-        catch
-        {
-            _ = application.Dispatcher.BeginInvoke(() =>
-            {
-                if (settings.UsageProvider == UsageProvider.Codex) widget.UpdateUsage(UsageDisplay.Empty);
-            });
-        }
-        finally
-        {
-            refreshGate.Release();
-        }
-    }
-
     private async Task RunRefreshTimerAsync(CancellationToken cancellationToken)
     {
         try
         {
             while (await refreshTimer.WaitForNextTickAsync(cancellationToken))
-            {
-                if (settings.UsageProvider == UsageProvider.Latrix)
-                    await RefreshLatrixUsageAsync(cancellationToken);
-                else await RefreshLimitsAsync(cancellationToken);
-            }
+                await RefreshLatrixUsageAsync(cancellationToken);
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
         {
         }
     }
 
-    private async Task StartUsageProviderAsync(CancellationToken cancellationToken)
-    {
-        if (settings.UsageProvider == UsageProvider.Latrix)
-            await RefreshLatrixUsageAsync(cancellationToken);
-        else await StartCodexAsync(cancellationToken);
-    }
-
     private async Task RefreshLatrixUsageAsync(CancellationToken cancellationToken)
     {
-        if (settings.UsageProvider != UsageProvider.Latrix || !await refreshGate.WaitAsync(0, cancellationToken)) return;
+        if (!await refreshGate.WaitAsync(0, cancellationToken)) return;
         try
         {
-            var apiKey = LatrixApiKeyStore.Load();
+            var apiKey = OpenCodeConfig.LoadApiKey();
             if (apiKey == null)
             {
-                latrixConfigured = false;
                 _ = application.Dispatcher.BeginInvoke(() =>
-                {
-                    if (settings.UsageProvider == UsageProvider.Latrix) widget.UpdateUsage(UsageDisplay.Empty);
-                });
+                    widget.UpdateUsage(UsageDisplay.Empty));
                 return;
             }
             var display = await latrix.ReadUsageAsync(apiKey, TimeZoneInfo.Local, cancellationToken);
-            _ = application.Dispatcher.BeginInvoke(() =>
-            {
-                if (settings.UsageProvider == UsageProvider.Latrix) widget.UpdateUsage(display);
-            });
+            _ = application.Dispatcher.BeginInvoke(() => widget.UpdateUsage(display));
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
         }
         catch
         {
-            _ = application.Dispatcher.BeginInvoke(() =>
-            {
-                if (settings.UsageProvider == UsageProvider.Latrix) widget.UpdateUsage(UsageDisplay.Empty);
-            });
+            _ = application.Dispatcher.BeginInvoke(() => widget.UpdateUsage(UsageDisplay.Empty));
         }
         finally
         {
             refreshGate.Release();
-        }
-    }
-
-    private async Task SelectUsageProviderAsync(UsageProvider provider)
-    {
-        if (provider == UsageProvider.Latrix && !latrixConfigured) return;
-        await sourceGate.WaitAsync(lifetime.Token);
-        try
-        {
-            settings.UsageProvider = provider;
-            settings.SaveWidget();
-            widget.SetUsageLabels(GetPrimaryUsageLabel(), "W");
-            widget.UpdateUsage(UsageDisplay.Empty);
-            if (provider == UsageProvider.Latrix)
-            {
-                var previous = codexClient;
-                codexClient = null;
-                if (previous != null) await previous.DisposeAsync();
-                await RefreshLatrixUsageAsync(lifetime.Token);
-            }
-            else await StartCodexAsync(lifetime.Token);
-            _ = application.Dispatcher.BeginInvoke(UpdateTray);
-        }
-        catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
-        {
-        }
-        finally
-        {
-            sourceGate.Release();
-        }
-    }
-
-    private string GetPrimaryUsageLabel() => settings.UsageProvider == UsageProvider.Latrix ? "6H" : "5H";
-
-    private async Task StartLoginAsync()
-    {
-        if (loginProcess?.HasExited == false) return;
-        try
-        {
-            loginProcess = CodexProcess.StartLogin();
-            while (!lifetime.IsCancellationRequested)
-            {
-                await Task.Delay(2000, lifetime.Token);
-                if (await CodexProcess.IsLoggedInAsync(lifetime.Token))
-                {
-                    loggedIn = true;
-                    if (settings.UsageProvider == UsageProvider.Codex)
-                        await StartCodexClientAsync(lifetime.Token);
-                    _ = application.Dispatcher.BeginInvoke(UpdateTray);
-                    return;
-                }
-                if (loginProcess.HasExited) return;
-            }
-        }
-        catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
-        {
-        }
-        catch (Exception error)
-        {
-            _ = application.Dispatcher.BeginInvoke(() => System.Windows.MessageBox.Show(error.Message,
-                "Codex Tracker", MessageBoxButton.OK, MessageBoxImage.Error));
-        }
-        finally
-        {
-            loginProcess?.Dispose();
-            loginProcess = null;
         }
     }
 
@@ -471,7 +241,7 @@ internal sealed class NativeAppController : IDisposable
         return menu;
     }
 
-    private async void ShowTraySettingsPanel()
+    private void ShowTraySettingsPanel()
     {
         if (quitting || openingSettingsPanel || !settingsPanelRequested) return;
         if (settingsPanel != null)
@@ -482,22 +252,15 @@ internal sealed class NativeAppController : IDisposable
         openingSettingsPanel = true;
         try
         {
-            if (settings.UsageProvider == UsageProvider.Codex)
-            {
-                try { loggedIn = await CodexProcess.IsLoggedInAsync(lifetime.Token); } catch { }
-            }
             if (quitting || !settingsPanelRequested || settingsPanel != null) return;
             UpdateTray();
             var panel = new SettingsPanelWindow(
                 widget.IsVisible,
-                loggedIn,
                 settings.UpdateAtStartup,
                 StartupRegistration.IsEnabled(applicationDirectory),
                 settings.HideInFullscreen,
                 settings.ShowFiveHour,
                 settings.ShowWeekly,
-                settings.UsageProvider,
-                latrixConfigured,
                 updates.RepairNeeded && !updates.IsChecking,
                 () =>
                 {
@@ -507,7 +270,6 @@ internal sealed class NativeAppController : IDisposable
                     CloseSettingsPanel();
                 },
                 OpenUsageDashboard,
-                () => _ = StartLoginAsync(),
                 () => _ = updates.CheckAsync(false),
                 enabled =>
                 {
@@ -543,23 +305,7 @@ internal sealed class NativeAppController : IDisposable
                     settings.SaveWidget();
                     ApplyMetricVisibility();
                 },
-                () =>
-                {
-                    _ = SelectUsageProviderAsync(UsageProvider.Codex);
-                    CloseSettingsPanel();
-                },
-                () =>
-                {
-                    _ = SelectUsageProviderAsync(UsageProvider.Latrix);
-                    CloseSettingsPanel();
-                },
-                ShowLatrixApiKeyDialog,
-                () =>
-                {
-                    _ = DisconnectLatrixAsync();
-                    CloseSettingsPanel();
-                },
-                () => trayTogglePending || openingLatrixDialog
+                () => trayTogglePending
             );
             panel.Closing += (_, _) => settingsPanelClosing = true;
             panel.Closed += (_, _) =>
@@ -639,48 +385,7 @@ internal sealed class NativeAppController : IDisposable
 
     private void OpenUsageDashboard()
     {
-        var url = settings.UsageProvider == UsageProvider.Latrix ? LatrixUsageUrl : CodexUsageUrl;
-        Process.Start(new ProcessStartInfo(url) { UseShellExecute = true });
-    }
-
-    private async void ShowLatrixApiKeyDialog()
-    {
-        if (quitting) return;
-        var dialog = new LatrixApiKeyWindow();
-        if (settingsPanel != null) dialog.Owner = settingsPanel;
-        bool? accepted;
-        openingLatrixDialog = true;
-        try
-        {
-            accepted = dialog.ShowDialog();
-        }
-        finally
-        {
-            openingLatrixDialog = false;
-        }
-        if (accepted != true) return;
-        try
-        {
-            await latrix.ValidateAsync(dialog.ApiKey, lifetime.Token);
-            LatrixApiKeyStore.Save(dialog.ApiKey);
-            latrixConfigured = true;
-            await SelectUsageProviderAsync(UsageProvider.Latrix);
-            CloseSettingsPanel();
-        }
-        catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
-        {
-        }
-        catch (Exception error)
-        {
-            System.Windows.MessageBox.Show(error.Message, "Codex Tracker", MessageBoxButton.OK, MessageBoxImage.Error);
-        }
-    }
-
-    private async Task DisconnectLatrixAsync()
-    {
-        LatrixApiKeyStore.Delete();
-        latrixConfigured = false;
-        await SelectUsageProviderAsync(UsageProvider.Codex);
+        Process.Start(new ProcessStartInfo(LatrixUsageUrl) { UseShellExecute = true });
     }
 
     private void HideWidget()
@@ -901,15 +606,13 @@ internal sealed class NativeAppController : IDisposable
         Quit();
     }
 
-    private async void Quit()
+    private void Quit()
     {
         if (quitting) return;
         quitting = true;
         lifetime.Cancel();
         refreshTimer?.Dispose();
         StopPinning();
-        try { if (loginProcess?.HasExited == false) loginProcess.Kill(true); } catch { }
-        loginProcess?.Dispose();
         var trayMenu = tray?.ContextMenuStrip;
         if (tray != null)
         {
@@ -919,7 +622,6 @@ internal sealed class NativeAppController : IDisposable
             tray.Dispose();
             tray = null;
         }
-        if (codexClient != null) await codexClient.DisposeAsync();
         application.Shutdown();
     }
 
@@ -948,28 +650,20 @@ internal sealed class SettingsPanelWindow : Window
 
     public SettingsPanelWindow(
         bool widgetVisible,
-        bool loggedIn,
         bool updateAtStartup,
         bool launchAtStartup,
         bool hideInFullscreen,
         bool showFiveHour,
         bool showWeekly,
-        UsageProvider usageProvider,
-        bool latrixConfigured,
         bool canRepair,
         Action toggleWidget,
         Action openDashboard,
-        Action signIn,
         Action repairUpdate,
         Action<bool> setUpdateAtStartup,
         Action<bool> setLaunchAtStartup,
         Action<bool> setHideInFullscreen,
         Action<bool> setShowFiveHour,
         Action<bool> setShowWeekly,
-        Action selectCodexUsage,
-        Action selectLatrixUsage,
-        Action connectLatrix,
-        Action disconnectLatrix,
         Func<bool> ignoreDeactivation
     )
     {
@@ -986,31 +680,15 @@ internal sealed class SettingsPanelWindow : Window
         var body = new StackPanel();
         body.Children.Add(CreateSectionLabel("Quick actions"));
         body.Children.Add(CreateButton(widgetVisible ? "Hide widget" : "Show widget", toggleWidget));
-        body.Children.Add(CreateButton("Open Codex usage dashboard", openDashboard));
+        body.Children.Add(CreateButton("Open Latrix usage dashboard", openDashboard));
         if (canRepair) body.Children.Add(CreateButton("Repair update", repairUpdate));
-        body.Children.Add(CreateSeparator());
-
-        body.Children.Add(CreateSectionLabel("Usage source"));
-        body.Children.Add(CreateButton(usageProvider == UsageProvider.Codex ? "Codex usage (active)" : "Use Codex usage",
-            selectCodexUsage, isSelected: usageProvider == UsageProvider.Codex));
-        if (latrixConfigured)
-            body.Children.Add(CreateButton(usageProvider == UsageProvider.Latrix
-                ? "Latrix usage (active)" : "Use Latrix usage", selectLatrixUsage,
-                isSelected: usageProvider == UsageProvider.Latrix));
-        body.Children.Add(CreateSeparator());
-
-        body.Children.Add(CreateSectionLabel("Connections"));
-        if (!loggedIn) body.Children.Add(CreateButton("Sign in to Codex", signIn));
-        if (latrixConfigured) body.Children.Add(CreateButton("Disconnect Latrix API", disconnectLatrix, isDanger: true));
-        else body.Children.Add(CreateButton("Connect Latrix API", connectLatrix));
         body.Children.Add(CreateSeparator());
 
         body.Children.Add(CreateSectionLabel("Preferences"));
         body.Children.Add(CreateToggle("Check update at startup", updateAtStartup, setUpdateAtStartup));
         body.Children.Add(CreateToggle("Launch at Windows startup", launchAtStartup, setLaunchAtStartup));
         body.Children.Add(CreateToggle("Hide in fullscreen apps", hideInFullscreen, setHideInFullscreen));
-        body.Children.Add(CreateToggle("Show " + (usageProvider == UsageProvider.Latrix ? "6H" : "5H") + " usage",
-            showFiveHour, setShowFiveHour));
+        body.Children.Add(CreateToggle("Show 6H usage", showFiveHour, setShowFiveHour));
         body.Children.Add(CreateToggle("Show weekly usage", showWeekly, setShowWeekly));
 
         Content = new Border
@@ -1139,74 +817,6 @@ internal sealed class SettingsPanelWindow : Window
         };
     }
 
-}
-
-internal sealed class LatrixApiKeyWindow : Window
-{
-    private readonly PasswordBox apiKey;
-
-    public string ApiKey => apiKey.Password;
-
-    public LatrixApiKeyWindow()
-    {
-        Title = "Connect Latrix API";
-        Width = 380;
-        SizeToContent = System.Windows.SizeToContent.Height;
-        WindowStartupLocation = WindowStartupLocation.CenterOwner;
-        ResizeMode = ResizeMode.NoResize;
-        ShowInTaskbar = false;
-        Topmost = true;
-
-        var message = new TextBlock
-        {
-            Text = "Enter a Latrix API key to read your usage limits.",
-            TextWrapping = TextWrapping.Wrap,
-            Foreground = new MediaSolidColorBrush(MediaColor.FromRgb(0x2d, 0x3a, 0x4a)),
-            Margin = new Thickness(0, 0, 0, 10),
-        };
-        apiKey = new PasswordBox
-        {
-            MinWidth = 300,
-            Margin = new Thickness(0, 0, 0, 8),
-        };
-        var error = new TextBlock
-        {
-            Foreground = new MediaSolidColorBrush(MediaColor.FromRgb(0xa9, 0x1f, 0x2d)),
-            Visibility = Visibility.Collapsed,
-            Margin = new Thickness(0, 0, 0, 8),
-        };
-        var actions = new StackPanel
-        {
-            Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
-        };
-        var cancel = new Button { Content = "Cancel", IsCancel = true, Margin = new Thickness(0, 0, 8, 0), Padding = new Thickness(12, 5, 12, 5) };
-        var connect = new Button { Content = "Connect", IsDefault = true, Padding = new Thickness(12, 5, 12, 5) };
-        connect.Click += (_, _) =>
-        {
-            if (!string.IsNullOrWhiteSpace(apiKey.Password))
-            {
-                DialogResult = true;
-                return;
-            }
-            error.Text = "An API key is required.";
-            error.Visibility = Visibility.Visible;
-        };
-        actions.Children.Add(cancel);
-        actions.Children.Add(connect);
-
-        var body = new StackPanel();
-        body.Children.Add(message);
-        body.Children.Add(apiKey);
-        body.Children.Add(error);
-        body.Children.Add(actions);
-        Content = new Border
-        {
-            Padding = new Thickness(18),
-            Child = body,
-        };
-        Loaded += (_, _) => apiKey.Focus();
-    }
 }
 
 internal static class StartupRegistration

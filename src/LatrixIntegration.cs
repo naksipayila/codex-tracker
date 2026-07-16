@@ -1,78 +1,78 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Security.Cryptography;
-using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
 namespace CodexUsageTray;
 
-internal static class LatrixApiKeyStore
+internal static class OpenCodeConfig
 {
-    private const string FileName = "latrix-api-key.dat";
+    private const string ConfigFileName = "opencode.json";
+    private const string JsoncConfigFileName = "opencode.jsonc";
+    private const string LegacyKeyFileName = "latrix-api-key.dat";
 
-    public static bool IsConfigured() => Load() != null;
-
-    public static string Load()
+    public static string LoadApiKey()
     {
-        try
+        foreach (var path in GetConfigPaths())
         {
-            var encrypted = File.ReadAllBytes(GetPath());
-            var plain = ProtectedData.Unprotect(encrypted, null, DataProtectionScope.CurrentUser);
             try
             {
-                var key = Encoding.UTF8.GetString(plain).Trim();
-                return string.IsNullOrWhiteSpace(key) ? null : key;
+                if (!File.Exists(path)) continue;
+                using var document = JsonDocument.Parse(File.ReadAllText(path), new JsonDocumentOptions
+                {
+                    AllowTrailingCommas = true,
+                    CommentHandling = JsonCommentHandling.Skip,
+                });
+                if (!TryGetApiKey(document.RootElement, out var apiKey)) continue;
+                return apiKey;
             }
-            finally
+            catch
             {
-                Array.Clear(plain, 0, plain.Length);
             }
         }
-        catch
-        {
-            return null;
-        }
+        return null;
     }
 
-    public static void Save(string apiKey)
+    public static void RemoveLegacyStoredKey()
     {
-        if (string.IsNullOrWhiteSpace(apiKey)) throw new InvalidOperationException("Enter a Latrix API key.");
-        var plain = Encoding.UTF8.GetBytes(apiKey.Trim());
-        byte[] encrypted = null;
-        try
-        {
-            encrypted = ProtectedData.Protect(plain, null, DataProtectionScope.CurrentUser);
-            var path = GetPath();
-            var temporaryPath = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
-            try
-            {
-                File.WriteAllBytes(temporaryPath, encrypted);
-                File.Move(temporaryPath, path, true);
-            }
-            finally
-            {
-                try { File.Delete(temporaryPath); } catch { }
-            }
-        }
-        finally
-        {
-            Array.Clear(plain, 0, plain.Length);
-            if (encrypted != null) Array.Clear(encrypted, 0, encrypted.Length);
-        }
+        try { File.Delete(Path.Combine(NativeSettings.GetUserDataDirectory(), LegacyKeyFileName)); } catch { }
     }
 
-    public static void Delete()
+    private static bool TryGetApiKey(JsonElement root, out string apiKey)
     {
-        try { File.Delete(GetPath()); } catch { }
+        apiKey = null;
+        if (!root.TryGetProperty("provider", out var providers) || providers.ValueKind != JsonValueKind.Object ||
+            !providers.TryGetProperty("latrix", out var latrix) || latrix.ValueKind != JsonValueKind.Object ||
+            !latrix.TryGetProperty("options", out var options) || options.ValueKind != JsonValueKind.Object ||
+            !options.TryGetProperty("apiKey", out var value) || value.ValueKind != JsonValueKind.String)
+            return false;
+
+        apiKey = value.GetString()?.Trim();
+        return !string.IsNullOrWhiteSpace(apiKey);
     }
 
-    private static string GetPath() => Path.Combine(NativeSettings.GetUserDataDirectory(), FileName);
+    private static IEnumerable<string> GetConfigPaths()
+    {
+        var configDirectory = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
+        if (string.IsNullOrWhiteSpace(configDirectory))
+            configDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".config");
+
+        yield return Path.Combine(configDirectory, "opencode", ConfigFileName);
+        yield return Path.Combine(configDirectory, "opencode", JsoncConfigFileName);
+
+        var roamingDirectory = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        if (!string.IsNullOrWhiteSpace(roamingDirectory))
+        {
+            yield return Path.Combine(roamingDirectory, "opencode", ConfigFileName);
+            yield return Path.Combine(roamingDirectory, "opencode", JsoncConfigFileName);
+        }
+    }
 }
 
 internal sealed class LatrixApiClient

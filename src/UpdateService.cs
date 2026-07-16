@@ -124,7 +124,7 @@ internal sealed class UpdateService
             "src/app.manifest",
             "src/NativeApplication.cs",
             "src/WidgetWindow.cs",
-            "src/CodexIntegration.cs",
+            "src/NativeTypes.cs",
             "src/LatrixIntegration.cs",
             "src/UpdateService.cs",
             "src/NativeSettings.cs",

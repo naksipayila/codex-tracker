@@ -4,19 +4,12 @@ using System.Text.Json;
 
 namespace CodexUsageTray;
 
-internal enum UsageProvider
-{
-    Codex,
-    Latrix,
-}
-
 internal sealed class NativeSettings
 {
     public double XRatio { get; set; } = 0.3;
     public bool HideInFullscreen { get; set; } = true;
     public bool ShowFiveHour { get; set; } = true;
     public bool ShowWeekly { get; set; } = true;
-    public UsageProvider UsageProvider { get; set; } = UsageProvider.Codex;
     public bool UpdateAtStartup { get; set; } = true;
 
     public static NativeSettings Load()
@@ -40,9 +33,6 @@ internal sealed class NativeSettings
                 if (root.TryGetProperty("showWeekly", out var showWeekly) &&
                     (showWeekly.ValueKind == JsonValueKind.True || showWeekly.ValueKind == JsonValueKind.False))
                     settings.ShowWeekly = showWeekly.GetBoolean();
-                if (root.TryGetProperty("usageProvider", out var provider) && provider.ValueKind == JsonValueKind.String &&
-                    Enum.TryParse<UsageProvider>(provider.GetString(), true, out var parsedProvider))
-                    settings.UsageProvider = parsedProvider;
             }
         }
         catch
@@ -74,7 +64,6 @@ internal sealed class NativeSettings
             hideInFullscreen = HideInFullscreen,
             showFiveHour = ShowFiveHour,
             showWeekly = ShowWeekly,
-            usageProvider = UsageProvider.ToString(),
         });
     }
 
