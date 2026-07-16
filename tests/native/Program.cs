@@ -158,10 +158,7 @@ internal static class Program
         Equal(392d, panel.Width, "settings panel width");
         var root = (Border)panel.Content;
         Equal(14d, root.CornerRadius.TopLeft, "settings panel corner radius");
-        var header = (Border)body.Children[0];
-        var headerBody = (StackPanel)header.Child;
-        Equal("Codex Tracker", ((TextBlock)headerBody.Children[0]).Text, "settings panel title");
-        Equal("Taskbar usage monitor", ((TextBlock)headerBody.Children[1]).Text, "settings panel subtitle");
+        Equal("QUICK ACTIONS", ((TextBlock)body.Children[0]).Text, "settings first section label");
         Equal("QUICK ACTIONS|PREFERENCES",
             string.Join("|", body.Children.OfType<TextBlock>()
                 .Where(text => text.Text == text.Text.ToUpperInvariant())

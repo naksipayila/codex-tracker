@@ -696,7 +696,6 @@ internal sealed class SettingsPanelWindow : Window
         UseLayoutRounding = true;
 
         var body = new StackPanel();
-        body.Children.Add(CreateHeader());
         body.Children.Add(CreateSectionLabel("Quick actions"));
         body.Children.Add(CreateButton(widgetVisible ? "Hide widget" : "Show widget", toggleWidget));
         body.Children.Add(CreateButton("Open Latrix usage dashboard", openDashboard));
@@ -731,37 +730,6 @@ internal sealed class SettingsPanelWindow : Window
         Deactivated += (_, _) =>
         {
             if (!closing && !ignoreDeactivation()) Close();
-        };
-    }
-
-    private static Border CreateHeader()
-    {
-        var header = new StackPanel();
-        header.Children.Add(new TextBlock
-        {
-            Text = "Codex Tracker",
-            Foreground = new MediaSolidColorBrush(MediaColor.FromRgb(0xf2, 0xf7, 0xfc)),
-            FontFamily = new MediaFontFamily("Segoe UI Variable Display, Segoe UI"),
-            FontSize = 18,
-            FontWeight = FontWeights.SemiBold,
-        });
-        header.Children.Add(new TextBlock
-        {
-            Text = "Taskbar usage monitor",
-            Foreground = new MediaSolidColorBrush(MediaColor.FromRgb(0x8e, 0xa5, 0xbd)),
-            FontFamily = new MediaFontFamily("Segoe UI Variable Text, Segoe UI"),
-            FontSize = 11,
-            Margin = new Thickness(0, 3, 0, 0),
-        });
-        return new Border
-        {
-            Background = new MediaSolidColorBrush(MediaColor.FromRgb(0x16, 0x25, 0x39)),
-            BorderBrush = new MediaSolidColorBrush(MediaColor.FromRgb(0x26, 0x3d, 0x55)),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(13, 11, 13, 12),
-            Margin = new Thickness(0, 0, 0, 17),
-            Child = header,
         };
     }
 
