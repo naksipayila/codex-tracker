@@ -57,7 +57,7 @@ jobs:
             throw "Release version must use numeric major.minor.patch format: $version"
           }
           $output = Join-Path $env:RUNNER_TEMP "Codex Tracker Setup.exe"
-          $portable = Join-Path $env:RUNNER_TEMP "Codex Tracker.exe"
+          $portable = Join-Path $env:RUNNER_TEMP "Codex.Tracker.exe"
           .\installer\build.ps1 -OutputPath $output -PortableOutputPath $portable -Version $version
           "version=$version" >> $env:GITHUB_OUTPUT
           "installer=$output" >> $env:GITHUB_OUTPUT
@@ -65,7 +65,7 @@ jobs:
 
           $packageHash = (Get-FileHash -LiteralPath $portable -Algorithm SHA256).Hash.ToLowerInvariant()
           $tag = "v$version"
-          $packageUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/Codex%20Tracker.exe"
+          $packageUrl = "https://github.com/$env:GITHUB_REPOSITORY/releases/download/$tag/Codex.Tracker.exe"
           $manifest = [ordered]@{
             version = $version
             packageUrl = $packageUrl
