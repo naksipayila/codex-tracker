@@ -39,9 +39,9 @@ internal sealed class UpdateService
         this.applicationToken = applicationToken;
     }
 
-    public async Task CheckAsync(bool startup)
+    public async Task<bool> CheckAsync(bool startup)
     {
-        if (Interlocked.Exchange(ref checking, 1) != 0) return;
+        if (Interlocked.Exchange(ref checking, 1) != 0) return false;
         stateChanged();
         try
         {
@@ -49,7 +49,7 @@ internal sealed class UpdateService
             if (!Directory.Exists(Path.Combine(applicationDirectory, ".git")))
             {
                 await CheckReleaseAsync(startup);
-                return;
+                return true;
             }
             var branch = (await RunGitAsync(["branch", "--show-current"])).Output.Trim();
             if (branch != "main") throw new InvalidOperationException($"Automatic updates require the main branch. The current branch is {branch}.");
@@ -64,7 +64,7 @@ internal sealed class UpdateService
             {
                 if (!startup) System.Windows.MessageBox.Show("Codex Tracker is up to date.", "Codex Tracker",
                     MessageBoxButton.OK, MessageBoxImage.Information);
-                return;
+                return true;
             }
 
             if (local != target)
@@ -82,16 +82,19 @@ internal sealed class UpdateService
             var confirmation = System.Windows.MessageBox.Show(details,
                 repairing ? "Repair Codex Tracker" : "Update Codex Tracker",
                 MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No);
-            if (confirmation != MessageBoxResult.Yes) return;
+            if (confirmation != MessageBoxResult.Yes) return true;
             await BeginUpdateAsync(local, target);
+            return true;
         }
         catch (OperationCanceledException) when (applicationToken.IsCancellationRequested)
         {
+            return true;
         }
         catch (Exception error)
         {
             if (!startup) System.Windows.MessageBox.Show(error.Message, "Automatic update is unavailable",
                 MessageBoxButton.OK, MessageBoxImage.Error);
+            return true;
         }
         finally
         {

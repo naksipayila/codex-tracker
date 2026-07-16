@@ -270,7 +270,7 @@ internal sealed class NativeAppController : IDisposable
                     CloseSettingsPanel();
                 },
                 OpenUsageDashboard,
-                () => _ = updates.CheckAsync(false),
+                CheckForUpdates,
                 enabled =>
                 {
                     settings.UpdateAtStartup = enabled;
@@ -351,6 +351,16 @@ internal sealed class NativeAppController : IDisposable
     {
         settingsPanelRequested = false;
         if (settingsPanel != null && !settingsPanelClosing) settingsPanel.Close();
+    }
+
+    private async void CheckForUpdates()
+    {
+        CloseSettingsPanel();
+        if (!await updates.CheckAsync(false))
+        {
+            System.Windows.MessageBox.Show("An update check is already in progress.", "Codex Tracker",
+                MessageBoxButton.OK, MessageBoxImage.Information);
+        }
     }
 
     private static void ConfigureContextMenuWindow(System.Windows.Forms.ContextMenuStrip menu)
