@@ -172,8 +172,6 @@ internal sealed class NativeAppController : IDisposable
         _ = RefreshLatrixUsageAsync(lifetime.Token);
         refreshTimer = new PeriodicTimer(TimeSpan.FromSeconds(30));
         _ = RunRefreshTimerAsync(lifetime.Token);
-        if (settings.UpdateAtStartup && Environment.GetEnvironmentVariable("CODEX_UPDATE_LAUNCH") != "1")
-            _ = ScheduleStartupUpdateAsync(lifetime.Token);
     }
 
     public void ShowWidget()
@@ -265,7 +263,6 @@ internal sealed class NativeAppController : IDisposable
             if (quitting || !settingsPanelRequested || settingsPanel != null) return;
             var panel = new SettingsPanelWindow(
                 widget.IsVisible,
-                settings.UpdateAtStartup,
                 StartupRegistration.IsEnabled(applicationDirectory),
                 settings.HideInFullscreen,
                 settings.ShowFiveHour,
@@ -280,12 +277,6 @@ internal sealed class NativeAppController : IDisposable
                 },
                 OpenUsageDashboard,
                 CheckForUpdates,
-                enabled =>
-                {
-                    settings.UpdateAtStartup = enabled;
-                    settings.SaveUpdatePreference();
-                    UpdateTray();
-                },
                 enabled =>
                 {
                     try { StartupRegistration.SetEnabled(applicationDirectory, enabled); }
@@ -580,18 +571,6 @@ internal sealed class NativeAppController : IDisposable
         });
     }
 
-    private async Task ScheduleStartupUpdateAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            await Task.Delay(500, cancellationToken);
-            await application.Dispatcher.InvokeAsync(async () => await updates.CheckAsync(true));
-        }
-        catch (OperationCanceledException)
-        {
-        }
-    }
-
     private void ShowUpdateResult()
     {
         var result = updates.ReadResult();
@@ -666,7 +645,6 @@ internal sealed class SettingsPanelWindow : Window
 
     public SettingsPanelWindow(
         bool widgetVisible,
-        bool updateAtStartup,
         bool launchAtStartup,
         bool hideInFullscreen,
         bool showFiveHour,
@@ -675,7 +653,6 @@ internal sealed class SettingsPanelWindow : Window
         Action toggleWidget,
         Action openDashboard,
         Action checkUpdate,
-        Action<bool> setUpdateAtStartup,
         Action<bool> setLaunchAtStartup,
         Action<bool> setHideInFullscreen,
         Action<bool> setShowFiveHour,
@@ -703,7 +680,6 @@ internal sealed class SettingsPanelWindow : Window
         body.Children.Add(CreateSeparator());
 
         body.Children.Add(CreateSectionLabel("Preferences"));
-        body.Children.Add(CreateToggle("Check update at startup", updateAtStartup, setUpdateAtStartup));
         body.Children.Add(CreateButton("Check for updates now", checkUpdate, true));
         body.Children.Add(CreateToggle("Launch at Windows startup", launchAtStartup, setLaunchAtStartup));
         body.Children.Add(CreateToggle("Hide in fullscreen apps", hideInFullscreen, setHideInFullscreen));

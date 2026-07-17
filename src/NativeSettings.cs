@@ -10,7 +10,6 @@ internal sealed class NativeSettings
     public bool HideInFullscreen { get; set; } = true;
     public bool ShowFiveHour { get; set; } = true;
     public bool ShowWeekly { get; set; } = true;
-    public bool UpdateAtStartup { get; set; } = true;
 
     public static NativeSettings Load()
     {
@@ -39,20 +38,7 @@ internal sealed class NativeSettings
         {
         }
 
-        try
-        {
-            var updatePath = Path.Combine(GetUserDataDirectory(), "update-preferences.json");
-            if (File.Exists(updatePath))
-            {
-                using var document = JsonDocument.Parse(File.ReadAllText(updatePath));
-                if (document.RootElement.TryGetProperty("updateAtStartup", out var enabled) &&
-                    (enabled.ValueKind == JsonValueKind.True || enabled.ValueKind == JsonValueKind.False))
-                    settings.UpdateAtStartup = enabled.GetBoolean();
-            }
-        }
-        catch
-        {
-        }
+        try { File.Delete(Path.Combine(GetUserDataDirectory(), "update-preferences.json")); } catch { }
         return settings;
     }
 
@@ -64,14 +50,6 @@ internal sealed class NativeSettings
             hideInFullscreen = HideInFullscreen,
             showFiveHour = ShowFiveHour,
             showWeekly = ShowWeekly,
-        });
-    }
-
-    public void SaveUpdatePreference()
-    {
-        WriteJsonAtomically(Path.Combine(GetUserDataDirectory(), "update-preferences.json"), new
-        {
-            updateAtStartup = UpdateAtStartup,
         });
     }
 

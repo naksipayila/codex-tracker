@@ -91,19 +91,15 @@ internal static class Program
                 """);
             File.WriteAllText(Path.Combine(directory, "widget-position.json"),
                 "{\"xRatio\":1.5,\"hideInFullscreen\":false}");
-            File.WriteAllText(Path.Combine(directory, "update-preferences.json"), "{\"updateAtStartup\":false}");
             var settings = NativeSettings.Load();
             Equal(1d, settings.XRatio, "ratio clamp");
             Equal(false, settings.HideInFullscreen, "fullscreen load");
             Equal(true, settings.ShowFiveHour, "five-hour visibility default");
             Equal(true, settings.ShowWeekly, "weekly visibility default");
-            Equal(false, settings.UpdateAtStartup, "update preference load");
             settings.XRatio = 0.42;
             settings.ShowFiveHour = false;
             settings.ShowWeekly = true;
             settings.SaveWidget();
-            settings.UpdateAtStartup = true;
-            settings.SaveUpdatePreference();
             using var widget = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, "widget-position.json")));
             Equal(0.42, widget.RootElement.GetProperty("xRatio").GetDouble(), "saved ratio");
             Equal(false, widget.RootElement.GetProperty("showFiveHour").GetBoolean(), "saved five-hour visibility");
@@ -115,8 +111,10 @@ internal static class Program
             OpenCodeConfig.RemoveLegacyStoredKey();
             if (File.Exists(Path.Combine(directory, "latrix-api-key.dat")))
                 throw new InvalidOperationException("The legacy Latrix key file was not removed.");
-            using var update = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, "update-preferences.json")));
-            Equal(true, update.RootElement.GetProperty("updateAtStartup").GetBoolean(), "saved update preference");
+            File.WriteAllText(Path.Combine(directory, "update-preferences.json"), "legacy");
+            _ = NativeSettings.Load();
+            if (File.Exists(Path.Combine(directory, "update-preferences.json")))
+                throw new InvalidOperationException("The removed startup update preference was not cleaned up.");
         }
         finally
         {
@@ -131,13 +129,11 @@ internal static class Program
         var toggleWidget = 0;
         var openDashboard = 0;
         var repairUpdate = 0;
-        bool? updateAtStartup = null;
         bool? launchAtStartup = null;
         bool? hideInFullscreen = null;
         bool? showFiveHour = null;
         bool? showWeekly = null;
-        var panel = new SettingsPanelWindow(
-            true,
+            var panel = new SettingsPanelWindow(
             true,
             false,
             true,
@@ -147,7 +143,6 @@ internal static class Program
             () => toggleWidget += 1,
             () => openDashboard += 1,
             () => repairUpdate += 1,
-            value => updateAtStartup = value,
             value => launchAtStartup = value,
             value => hideInFullscreen = value,
             value => showFiveHour = value,
@@ -186,12 +181,10 @@ internal static class Program
         if (body.Children.OfType<Button>().Any(button => button.Content as string == "Refresh usage"))
             throw new InvalidOperationException("The manual refresh action is still present.");
 
-        Toggle(body, "Check update at startup", false);
         Toggle(body, "Launch at Windows startup", true);
         Toggle(body, "Hide in fullscreen apps", false);
         Toggle(body, "Show 6H usage", false);
         Toggle(body, "Show weekly usage", true);
-        Equal(false, updateAtStartup, "update preference action");
         Equal(true, launchAtStartup, "startup preference action");
         Equal(false, hideInFullscreen, "fullscreen preference action");
         Equal(false, showFiveHour, "five-hour visibility action");
@@ -202,14 +195,12 @@ internal static class Program
             false,
             false,
             false,
-            false,
             true,
             true,
             false,
             () => showWidget += 1,
             () => { },
             () => { },
-            _ => { },
             _ => { },
             _ => { },
             _ => { },
