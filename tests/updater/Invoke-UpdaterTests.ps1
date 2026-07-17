@@ -30,6 +30,8 @@ $script:BuildInputs = @(
     "src/NativeSettings.cs",
     "src/NativeMethods.cs",
     "src/WidgetWindow.cs",
+    "src/TelemetryPanel.cs",
+    "src/TelemetryWindow.cs",
     "src/NativeTypes.cs",
     "src/LatrixIntegration.cs",
     "src/UpdateService.cs",
