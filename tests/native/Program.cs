@@ -15,6 +15,7 @@ internal static class Program
         var tests = new (string Name, Action Run)[]
         {
             ("Latrix usage projection", ProjectLatrixUsage),
+            ("Latrix telemetry projection", ProjectLatrixTelemetry),
             ("Latrix API authorization", AuthorizeLatrixApi),
             ("atomic settings persistence", PersistSettings),
             ("settings panel actions", TestSettingsPanelActions),
@@ -66,6 +67,20 @@ internal static class Program
         Equal("/api/window", requests[1].Path, "Latrix usage path");
         Equal("Bearer unit-test-key", requests[0].Authorization, "Latrix validation authorization");
         Equal("Bearer unit-test-key", requests[1].Authorization, "Latrix usage authorization");
+    }
+
+    private static void ProjectLatrixTelemetry()
+    {
+        using var document = JsonDocument.Parse("""
+            {"users":[{"userId":"u1","name":"Ali Taha Yapışkan","role":"ADMIN","online":true,"requests":12,"inputTokens":1000000,"cachedTokens":250000,"outputTokens":50000,"reasoningTokens":12500,"totalTokens":1062500,"models":2,"errors":1,"avgLatencyMs":13100,"lastActive":"2026-07-17T10:00:00Z","breakdown":[{"model":"gpt-5","totalTokens":900000,"requests":10,"efforts":[{"effort":"high","requests":4}]}]},{"userId":"u2","name":"Latrix","role":"ADMIN","online":false,"requests":0,"inputTokens":null,"cachedTokens":null,"outputTokens":null,"reasoningTokens":null,"totalTokens":null,"models":null,"errors":null,"avgLatencyMs":null,"lastActive":null,"breakdown":null}]}
+            """);
+        var people = LatrixTelemetryParser.Project(document.RootElement);
+        Equal(2, people.Count, "telemetry person count");
+        Equal("Ali Taha Yapışkan", people[0].Name, "telemetry person name");
+        Equal(1, people[0].Breakdown.Count, "telemetry breakdown count");
+        Equal("high: 4", people[0].Breakdown[0].Efforts, "telemetry effort summary");
+        Equal(0L, people[1].TotalTokens, "null telemetry total");
+        Equal("", people[1].LastActive, "null telemetry last active");
     }
 
     private static void PersistSettings()
@@ -128,6 +143,7 @@ internal static class Program
     {
         var toggleWidget = 0;
         var openDashboard = 0;
+        var openTelemetry = 0;
         var repairUpdate = 0;
         bool? launchAtStartup = null;
         bool? hideInFullscreen = null;
@@ -139,10 +155,11 @@ internal static class Program
             true,
             true,
             false,
-            true,
-            () => toggleWidget += 1,
-            () => openDashboard += 1,
-            () => repairUpdate += 1,
+             true,
+              () => toggleWidget += 1,
+              () => openDashboard += 1,
+              () => openTelemetry += 1,
+              () => repairUpdate += 1,
             value => launchAtStartup = value,
             value => hideInFullscreen = value,
             value => showFiveHour = value,
@@ -167,16 +184,18 @@ internal static class Program
         Equal(DependencyProperty.UnsetValue, hideButton.ReadLocalValue(Control.BorderBrushProperty), "button border style");
         Click(body, "Hide widget");
         Click(body, "Open Latrix usage dashboard");
+        Click(body, "Open telemetry window");
         Click(body, "Repair update");
         Equal(1, toggleWidget, "hide widget action");
         Equal(1, openDashboard, "dashboard action");
+        Equal(1, openTelemetry, "telemetry action");
         Equal(1, repairUpdate, "repair action");
         if (body.Children.OfType<Button>().Any(button =>
             (button.Content as string)?.Contains("Codex", StringComparison.OrdinalIgnoreCase) == true))
             throw new InvalidOperationException("The settings panel still exposes a Codex action.");
         if (body.Children.OfType<Button>().Any(button =>
             (button.Content as string)?.Contains("usage", StringComparison.OrdinalIgnoreCase) == true &&
-            button.Content as string != "Open Latrix usage dashboard"))
+             button.Content as string != "Open Latrix usage dashboard"))
             throw new InvalidOperationException("The settings panel still exposes a usage source selector.");
         if (body.Children.OfType<Button>().Any(button => button.Content as string == "Refresh usage"))
             throw new InvalidOperationException("The manual refresh action is still present.");
@@ -198,9 +217,10 @@ internal static class Program
             true,
             true,
             false,
-            () => showWidget += 1,
-            () => { },
-            () => { },
+             () => showWidget += 1,
+             () => { },
+             () => { },
+             () => { },
             _ => { },
             _ => { },
             _ => { },
@@ -214,8 +234,8 @@ internal static class Program
             (button.Content as string)?.Contains("Codex", StringComparison.OrdinalIgnoreCase) == true))
             throw new InvalidOperationException("The settings panel still exposes a Codex action.");
         if (hiddenBody.Children.OfType<Button>().Any(button =>
-            (button.Content as string)?.Contains("usage", StringComparison.OrdinalIgnoreCase) == true &&
-            button.Content as string != "Open Latrix usage dashboard"))
+             (button.Content as string)?.Contains("usage", StringComparison.OrdinalIgnoreCase) == true &&
+             button.Content as string != "Open Latrix usage dashboard"))
             throw new InvalidOperationException("The settings panel still exposes a usage source selector.");
     }
 

@@ -102,6 +102,13 @@ internal sealed class LatrixApiClient
         return LatrixUsageParser.Project(response, timeZone);
     }
 
+    public async Task<IReadOnlyList<TelemetryPerson>> ReadTelemetryAsync(string apiKey, int days,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await GetJsonAsync($"api/telemetry?days={Math.Clamp(days, 1, 30)}", apiKey, cancellationToken);
+        return LatrixTelemetryParser.Project(response);
+    }
+
     private async Task<JsonElement> GetJsonAsync(string path, string apiKey, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(apiKey)) throw new InvalidOperationException("A Latrix API key is required.");
@@ -117,6 +124,74 @@ internal sealed class LatrixApiClient
         await using var stream = await response.Content.ReadAsStreamAsync(timeout.Token);
         using var document = await JsonDocument.ParseAsync(stream, cancellationToken: timeout.Token);
         return document.RootElement.Clone();
+    }
+}
+
+internal static class LatrixTelemetryParser
+{
+    public static IReadOnlyList<TelemetryPerson> Project(JsonElement result)
+    {
+        if (!result.TryGetProperty("users", out var users) || users.ValueKind != JsonValueKind.Array)
+            throw new InvalidDataException("Latrix telemetry response did not contain users.");
+
+        var projected = new List<TelemetryPerson>();
+        foreach (var user in users.EnumerateArray())
+        {
+            var breakdown = new List<TelemetryBreakdown>();
+            if (user.TryGetProperty("breakdown", out var items) && items.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in items.EnumerateArray())
+                {
+                    var efforts = new List<string>();
+                    if (item.TryGetProperty("efforts", out var effortItems) && effortItems.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var effort in effortItems.EnumerateArray())
+                            efforts.Add($"{GetString(effort, "effort", "-")}: {GetInt(effort, "requests")}");
+                    }
+                    breakdown.Add(new TelemetryBreakdown(
+                        GetString(item, "model", "Unknown"), GetLong(item, "totalTokens"),
+                        GetInt(item, "requests"), string.Join(", ", efforts)));
+                }
+            }
+            projected.Add(new TelemetryPerson(
+                GetString(user, "userId", GetString(user, "name", "Unknown")),
+                GetString(user, "name", "Unknown"), GetString(user, "role", ""),
+                GetBool(user, "online"), GetInt(user, "requests"), GetLong(user, "inputTokens"),
+                GetLong(user, "cachedTokens"), GetLong(user, "outputTokens"), GetLong(user, "reasoningTokens"),
+                GetLong(user, "totalTokens"), GetInt(user, "models"), GetInt(user, "errors"),
+                GetDouble(user, "avgLatencyMs"), FormatLastActive(GetString(user, "lastActive", "")), breakdown));
+        }
+        return projected;
+    }
+
+    private static string GetString(JsonElement value, string name, string fallback) =>
+        value.TryGetProperty(name, out var item) && item.ValueKind == JsonValueKind.String
+            ? item.GetString() ?? fallback : fallback;
+
+    private static int GetInt(JsonElement value, string name) =>
+        value.TryGetProperty(name, out var item) && item.ValueKind == JsonValueKind.Number &&
+        item.TryGetInt32(out var number) ? number : 0;
+
+    private static long GetLong(JsonElement value, string name) =>
+        value.TryGetProperty(name, out var item) && item.ValueKind == JsonValueKind.Number &&
+        item.TryGetInt64(out var number) ? number : 0;
+
+    private static double GetDouble(JsonElement value, string name) =>
+        value.TryGetProperty(name, out var item) && item.ValueKind == JsonValueKind.Number &&
+        item.TryGetDouble(out var number) ? number : 0;
+
+    private static bool GetBool(JsonElement value, string name) =>
+        value.TryGetProperty(name, out var item) && item.ValueKind == JsonValueKind.True && item.GetBoolean();
+
+    private static string FormatLastActive(string value)
+    {
+        if (!DateTimeOffset.TryParse(value, CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var active)) return value;
+        var age = DateTimeOffset.UtcNow - active;
+        if (age.TotalSeconds < 60) return "now";
+        if (age.TotalMinutes < 60) return $"{(int)age.TotalMinutes}m ago";
+        if (age.TotalHours < 24) return $"{(int)age.TotalHours}h ago";
+        return $"{(int)age.TotalDays}d ago";
     }
 }
 

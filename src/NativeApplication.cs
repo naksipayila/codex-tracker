@@ -85,6 +85,7 @@ internal sealed class NativeAppController : IDisposable
     private readonly LatrixApiClient latrix = new();
     private WidgetWindow widget;
     private SettingsPanelWindow settingsPanel;
+    private TelemetryWindow telemetryWindow;
     private System.Windows.Forms.NotifyIcon tray;
     private Process pinHelper;
     private PeriodicTimer refreshTimer;
@@ -266,17 +267,18 @@ internal sealed class NativeAppController : IDisposable
                 StartupRegistration.IsEnabled(applicationDirectory),
                 settings.HideInFullscreen,
                 settings.ShowFiveHour,
-                settings.ShowWeekly,
-                updates.RepairNeeded && !updates.IsChecking,
-                () =>
+                 settings.ShowWeekly,
+                 updates.RepairNeeded && !updates.IsChecking,
+                 () =>
                 {
                     if (widget.IsVisible) HideWidget();
                     else ShowWidget();
                     settingsPanelRequested = false;
                     CloseSettingsPanel();
-                },
-                OpenUsageDashboard,
-                CheckForUpdates,
+                 },
+                 OpenUsageDashboard,
+                 OpenTelemetryWindow,
+                 CheckForUpdates,
                 enabled =>
                 {
                     try { StartupRegistration.SetEnabled(applicationDirectory, enabled); }
@@ -396,6 +398,18 @@ internal sealed class NativeAppController : IDisposable
     private void OpenUsageDashboard()
     {
         Process.Start(new ProcessStartInfo(LatrixUsageUrl) { UseShellExecute = true });
+    }
+
+    private void OpenTelemetryWindow()
+    {
+        if (telemetryWindow != null)
+        {
+            telemetryWindow.Activate();
+            return;
+        }
+        telemetryWindow = new TelemetryWindow(latrix, OpenCodeConfig.LoadApiKey());
+        telemetryWindow.Closed += (_, _) => telemetryWindow = null;
+        telemetryWindow.Show();
     }
 
     private void HideWidget()
@@ -607,6 +621,7 @@ internal sealed class NativeAppController : IDisposable
         quitting = true;
         lifetime.Cancel();
         refreshTimer?.Dispose();
+        telemetryWindow?.Close();
         StopPinning();
         var trayMenu = tray?.ContextMenuStrip;
         if (tray != null)
@@ -636,6 +651,7 @@ internal sealed class NativeAppController : IDisposable
         SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         refreshTimer?.Dispose();
+        telemetryWindow?.Close();
     }
 }
 
@@ -652,6 +668,7 @@ internal sealed class SettingsPanelWindow : Window
         bool canRepair,
         Action toggleWidget,
         Action openDashboard,
+        Action openTelemetry,
         Action checkUpdate,
         Action<bool> setLaunchAtStartup,
         Action<bool> setHideInFullscreen,
@@ -672,10 +689,11 @@ internal sealed class SettingsPanelWindow : Window
         SnapsToDevicePixels = true;
         UseLayoutRounding = true;
 
-        var body = new StackPanel();
+        var body = new StackPanel { Width = 356 };
         body.Children.Add(CreateSectionLabel("Quick actions"));
         body.Children.Add(CreateButton(widgetVisible ? "Hide widget" : "Show widget", toggleWidget));
         body.Children.Add(CreateButton("Open Latrix usage dashboard", openDashboard));
+        body.Children.Add(CreateButton("Open telemetry window", openTelemetry));
         if (canRepair) body.Children.Add(CreateButton("Repair update", checkUpdate));
         body.Children.Add(CreateSeparator());
 
