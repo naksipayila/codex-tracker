@@ -1180,7 +1180,7 @@ internal static class Program
         {
             throw new InvalidOperationException("The installed executable does not match the release package.");
         }
-        ValidatePackageLauncher(options, launcher, true);
+        ValidatePackageLauncher(options, launcher);
         reportProgress("Verifying native update...", 82);
         return WritePackagePendingUpdateState(options, "verified");
     }
@@ -1208,7 +1208,7 @@ internal static class Program
         {
             throw new InvalidOperationException("The previous executable could not be restored.");
         }
-        ValidatePackageLauncher(options, launcher, false);
+        ValidatePackageLauncher(options, launcher);
         pendingContent = WritePackagePendingUpdateState(options, "rolled-back");
         reportProgress("Restarting previous version...", 97);
         TryDeleteFile(options.AppReadyPath);
@@ -1236,7 +1236,7 @@ internal static class Program
         return true;
     }
 
-    private static void ValidatePackageLauncher(UpdateOptions options, string launcher, bool validateVersion)
+    private static void ValidatePackageLauncher(UpdateOptions options, string launcher)
     {
         var token = Guid.NewGuid().ToString("N");
         var readyPath = Path.Combine(options.StateDirectory, "launcher-self-test-" + token + ".ready");
@@ -1257,13 +1257,6 @@ internal static class Program
                 response.Length - separator - 1 != 64)
             {
                 throw new InvalidOperationException("The release launcher failed its compatibility self-test.");
-            }
-            if (validateVersion)
-            {
-                var actualVersion = AssemblyName.GetAssemblyName(launcher).Version;
-                Version expectedVersion;
-                if (!IsReleaseVersion(options.TargetVersion, out expectedVersion) || actualVersion != expectedVersion)
-                    throw new InvalidOperationException("The release launcher version does not match the release manifest.");
             }
         }
         finally
