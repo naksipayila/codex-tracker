@@ -10,6 +10,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Threading;
+using System.Windows.Media.Animation;
 using MediaBrushes = System.Windows.Media.Brushes;
 using MediaColor = System.Windows.Media.Color;
 using MediaFontFamily = System.Windows.Media.FontFamily;
@@ -324,6 +325,7 @@ internal sealed class NativeAppController : IDisposable
             settingsPanel = panel;
             panel.Show();
             PositionSettingsPanel(panel);
+            panel.RevealFromRight();
             panel.Activate();
         }
         finally
@@ -664,6 +666,7 @@ internal sealed class NativeAppController : IDisposable
 
 internal sealed class SettingsPanelWindow : Window
 {
+    private const double OpenSlideDistance = 28;
     private bool closing;
 
     public SettingsPanelWindow(
@@ -732,6 +735,33 @@ internal sealed class SettingsPanelWindow : Window
         {
             if (!closing && !ignoreDeactivation()) Close();
         };
+    }
+
+    public void RevealFromRight()
+    {
+        if (!SystemParameters.ClientAreaAnimation)
+        {
+            Opacity = 1;
+            return;
+        }
+
+        var targetLeft = Left;
+        Opacity = 0;
+        Left = targetLeft + OpenSlideDistance;
+        BeginAnimation(LeftProperty, new DoubleAnimation
+        {
+            From = targetLeft + OpenSlideDistance,
+            To = targetLeft,
+            Duration = TimeSpan.FromMilliseconds(220),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+        });
+        BeginAnimation(OpacityProperty, new DoubleAnimation
+        {
+            From = 0,
+            To = 1,
+            Duration = TimeSpan.FromMilliseconds(180),
+            EasingFunction = new CubicEase { EasingMode = EasingMode.EaseOut },
+        });
     }
 
     private static Button CreateButton(string text, Action action, bool accent = false)
