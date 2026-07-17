@@ -230,18 +230,42 @@ internal static class Program
                 JsonSerializer.Serialize(manifest, new JsonSerializerOptions { WriteIndented = true }),
                 new UTF8Encoding(false));
 
-            RunRequired("gh", new[]
-            {
-                "release", "create", "v" + version, package, manifestPath,
-                "--repo", repository,
-                "--title", "Codex Tracker " + version,
-                "--generate-notes",
-            }, repositoryRoot);
+            PublishRelease(repositoryRoot, repository, version, package, manifestPath);
         }
         finally
         {
             TryDeleteDirectory(releaseDirectory);
         }
+    }
+
+    private static void PublishRelease(
+        string repositoryRoot,
+        string repository,
+        string version,
+        string package,
+        string manifestPath)
+    {
+        var tag = "v" + version;
+        var existing = RunProcess("gh", new[] { "release", "view", tag, "--repo", repository }, repositoryRoot);
+        if (existing.ExitCode == 0)
+        {
+            RunRequired("gh", new[]
+            {
+                "release", "upload", tag, package, manifestPath,
+                "--repo", repository,
+                "--clobber",
+            }, repositoryRoot);
+            Console.WriteLine("Updated existing GitHub release " + tag + ".");
+            return;
+        }
+
+        RunRequired("gh", new[]
+        {
+            "release", "create", tag, package, manifestPath,
+            "--repo", repository,
+            "--title", "Codex Tracker " + version,
+            "--generate-notes",
+        }, repositoryRoot);
     }
 
     private static string ComputeFileHash(string path)

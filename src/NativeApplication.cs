@@ -146,7 +146,7 @@ internal sealed class NativeAppController : IDisposable
             }));
         };
         UpdateTray();
-        StartupRegistration.RehomeIfConfigured(applicationDirectory);
+        StartupRegistration.SetEnabled(applicationDirectory, settings.LaunchAtStartup);
 
         if (settings.ShowFiveHour || settings.ShowWeekly)
         {
@@ -279,15 +279,20 @@ internal sealed class NativeAppController : IDisposable
                  OpenUsageDashboard,
                  OpenTelemetryWindow,
                  CheckForUpdates,
-                enabled =>
-                {
-                    try { StartupRegistration.SetEnabled(applicationDirectory, enabled); }
-                    catch (Exception error)
-                    {
-                        System.Windows.MessageBox.Show(error.Message, "Codex Tracker",
-                            MessageBoxButton.OK, MessageBoxImage.Error);
-                    }
-                },
+                 enabled =>
+                 {
+                     try
+                     {
+                         StartupRegistration.SetEnabled(applicationDirectory, enabled);
+                         settings.LaunchAtStartup = enabled;
+                         settings.SaveWidget();
+                     }
+                     catch (Exception error)
+                     {
+                         System.Windows.MessageBox.Show(error.Message, "Codex Tracker",
+                             MessageBoxButton.OK, MessageBoxImage.Error);
+                     }
+                 },
                 enabled =>
                 {
                     settings.HideInFullscreen = enabled;
@@ -402,14 +407,16 @@ internal sealed class NativeAppController : IDisposable
 
     private void OpenTelemetryWindow()
     {
+        CloseSettingsPanel();
         if (telemetryWindow != null)
         {
-            telemetryWindow.Activate();
+            telemetryWindow.BringToFront();
             return;
         }
         telemetryWindow = new TelemetryWindow(latrix, OpenCodeConfig.LoadApiKey());
         telemetryWindow.Closed += (_, _) => telemetryWindow = null;
         telemetryWindow.Show();
+        telemetryWindow.BringToFront();
     }
 
     private void HideWidget()
@@ -706,8 +713,8 @@ internal sealed class SettingsPanelWindow : Window
 
         Content = new Border
         {
-            Background = new MediaSolidColorBrush(MediaColor.FromRgb(0x10, 0x19, 0x26)),
-            BorderBrush = new MediaSolidColorBrush(MediaColor.FromRgb(0x2d, 0x45, 0x5e)),
+            Background = new MediaSolidColorBrush(MediaColor.FromRgb(0x24, 0x11, 0x16)),
+            BorderBrush = new MediaSolidColorBrush(MediaColor.FromRgb(0x63, 0x31, 0x3d)),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(14),
             Padding = new Thickness(18),
@@ -730,20 +737,20 @@ internal sealed class SettingsPanelWindow : Window
     private static Button CreateButton(string text, Action action, bool accent = false)
     {
         var background = accent
-            ? new MediaSolidColorBrush(MediaColor.FromRgb(0x1d, 0x68, 0x8a))
-            : new MediaSolidColorBrush(MediaColor.FromRgb(0x19, 0x2a, 0x3d));
+            ? new MediaSolidColorBrush(MediaColor.FromRgb(0x8f, 0x2e, 0x45))
+            : new MediaSolidColorBrush(MediaColor.FromRgb(0x32, 0x18, 0x21));
         var hoverBackground = accent
-            ? new MediaSolidColorBrush(MediaColor.FromRgb(0x25, 0x7f, 0xa5))
-            : new MediaSolidColorBrush(MediaColor.FromRgb(0x22, 0x3a, 0x52));
+            ? new MediaSolidColorBrush(MediaColor.FromRgb(0xb4, 0x4c, 0x63))
+            : new MediaSolidColorBrush(MediaColor.FromRgb(0x45, 0x1d, 0x2a));
         var pressedBackground = accent
-            ? new MediaSolidColorBrush(MediaColor.FromRgb(0x18, 0x56, 0x73))
-            : new MediaSolidColorBrush(MediaColor.FromRgb(0x15, 0x24, 0x35));
+            ? new MediaSolidColorBrush(MediaColor.FromRgb(0x61, 0x1e, 0x2e))
+            : new MediaSolidColorBrush(MediaColor.FromRgb(0x27, 0x12, 0x18));
         var border = accent
-            ? new MediaSolidColorBrush(MediaColor.FromRgb(0x3e, 0x9d, 0xc2))
-            : new MediaSolidColorBrush(MediaColor.FromRgb(0x2c, 0x46, 0x60));
+            ? new MediaSolidColorBrush(MediaColor.FromRgb(0xd0, 0x64, 0x78))
+            : new MediaSolidColorBrush(MediaColor.FromRgb(0x6f, 0x3a, 0x47));
         var hoverBorder = accent
-            ? new MediaSolidColorBrush(MediaColor.FromRgb(0x70, 0xc7, 0xe6))
-            : new MediaSolidColorBrush(MediaColor.FromRgb(0x4a, 0x75, 0x99));
+            ? new MediaSolidColorBrush(MediaColor.FromRgb(0xe6, 0x8f, 0xa0))
+            : new MediaSolidColorBrush(MediaColor.FromRgb(0x96, 0x60, 0x70));
         var button = new Button
         {
             Content = text,
@@ -752,7 +759,7 @@ internal sealed class SettingsPanelWindow : Window
             Padding = new Thickness(12, 9, 12, 9),
             BorderThickness = new Thickness(1),
             Margin = new Thickness(0, 3, 0, 3),
-            Foreground = new MediaSolidColorBrush(MediaColor.FromRgb(0xe9, 0xf4, 0xfc)),
+            Foreground = new MediaSolidColorBrush(MediaColor.FromRgb(0xff, 0xf1, 0xf3)),
             FontFamily = new MediaFontFamily("Segoe UI Variable Text, Segoe UI"),
             FontSize = 13,
             FontWeight = accent ? FontWeights.SemiBold : FontWeights.Normal,
@@ -804,7 +811,7 @@ internal sealed class SettingsPanelWindow : Window
         return new TextBlock
         {
             Text = text.ToUpperInvariant(),
-            Foreground = new MediaSolidColorBrush(MediaColor.FromRgb(0x80, 0xa1, 0xbc)),
+            Foreground = new MediaSolidColorBrush(MediaColor.FromRgb(0xb5, 0x7e, 0x89)),
             FontFamily = new MediaFontFamily("Segoe UI Variable Text, Segoe UI"),
             FontSize = 10,
             FontWeight = FontWeights.SemiBold,
@@ -818,7 +825,7 @@ internal sealed class SettingsPanelWindow : Window
         {
             Content = text,
             IsChecked = value,
-            Foreground = new MediaSolidColorBrush(MediaColor.FromRgb(0xd1, 0xe0, 0xee)),
+            Foreground = new MediaSolidColorBrush(MediaColor.FromRgb(0xe7, 0xcd, 0xd1)),
             FontFamily = new MediaFontFamily("Segoe UI Variable Text, Segoe UI"),
             FontSize = 13,
             Padding = new Thickness(0),
@@ -842,7 +849,7 @@ internal sealed class SettingsPanelWindow : Window
         track.SetValue(FrameworkElement.WidthProperty, 32d);
         track.SetValue(FrameworkElement.HeightProperty, 18d);
         track.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
-        track.SetValue(Border.BackgroundProperty, new MediaSolidColorBrush(MediaColor.FromRgb(0x2b, 0x3d, 0x50)));
+        track.SetValue(Border.BackgroundProperty, new MediaSolidColorBrush(MediaColor.FromRgb(0x5d, 0x29, 0x35)));
         track.SetValue(Border.CornerRadiusProperty, new CornerRadius(9));
 
         var knob = new FrameworkElementFactory(typeof(System.Windows.Shapes.Ellipse));
@@ -853,7 +860,7 @@ internal sealed class SettingsPanelWindow : Window
         knob.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
         knob.SetValue(FrameworkElement.MarginProperty, new Thickness(3, 0, 0, 0));
         knob.SetValue(System.Windows.Shapes.Shape.FillProperty,
-            new MediaSolidColorBrush(MediaColor.FromRgb(0x8e, 0xa2, 0xb7)));
+            new MediaSolidColorBrush(MediaColor.FromRgb(0xb3, 0x84, 0x8d)));
         track.AppendChild(knob);
         content.AppendChild(track);
 
@@ -872,14 +879,14 @@ internal sealed class SettingsPanelWindow : Window
         var style = new Style(typeof(CheckBox));
         style.Setters.Add(new Setter(Control.TemplateProperty, template));
         style.Setters.Add(new Setter(Control.BackgroundProperty,
-            new MediaSolidColorBrush(MediaColor.FromRgb(0x15, 0x23, 0x34))));
+            new MediaSolidColorBrush(MediaColor.FromRgb(0x2b, 0x14, 0x1b))));
         style.Setters.Add(new Setter(Control.BorderBrushProperty,
-            new MediaSolidColorBrush(MediaColor.FromRgb(0x21, 0x36, 0x4b))));
+            new MediaSolidColorBrush(MediaColor.FromRgb(0x4a, 0x24, 0x2e))));
         var hoverTrigger = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
         hoverTrigger.Setters.Add(new Setter(Control.BackgroundProperty,
-            new MediaSolidColorBrush(MediaColor.FromRgb(0x1b, 0x2e, 0x43))));
+            new MediaSolidColorBrush(MediaColor.FromRgb(0x45, 0x1d, 0x2a))));
         hoverTrigger.Setters.Add(new Setter(Control.BorderBrushProperty,
-            new MediaSolidColorBrush(MediaColor.FromRgb(0x35, 0x5a, 0x79))));
+            new MediaSolidColorBrush(MediaColor.FromRgb(0x75, 0x3c, 0x4b))));
         style.Triggers.Add(hoverTrigger);
         var checkedTrigger = new Trigger
         {
@@ -887,9 +894,9 @@ internal sealed class SettingsPanelWindow : Window
             Value = true,
         };
         checkedTrigger.Setters.Add(new Setter(Border.BackgroundProperty,
-            new MediaSolidColorBrush(MediaColor.FromRgb(0x1d, 0x68, 0x8a)), "Track"));
+            new MediaSolidColorBrush(MediaColor.FromRgb(0x8f, 0x2e, 0x45)), "Track"));
         checkedTrigger.Setters.Add(new Setter(System.Windows.Shapes.Shape.FillProperty,
-            new MediaSolidColorBrush(MediaColor.FromRgb(0xf4, 0xfb, 0xff)), "Knob"));
+            new MediaSolidColorBrush(MediaColor.FromRgb(0xff, 0xf1, 0xf3)), "Knob"));
         checkedTrigger.Setters.Add(new Setter(FrameworkElement.MarginProperty, new Thickness(16, 0, 0, 0), "Knob"));
         template.Triggers.Add(checkedTrigger);
         toggle.Style = style;
@@ -903,7 +910,7 @@ internal sealed class SettingsPanelWindow : Window
         return new Border
         {
             Height = 1,
-            Background = new MediaSolidColorBrush(MediaColor.FromRgb(0x25, 0x3b, 0x52)),
+            Background = new MediaSolidColorBrush(MediaColor.FromRgb(0x5f, 0x2e, 0x3a)),
             Margin = new Thickness(0, 12, 0, 12),
         };
     }

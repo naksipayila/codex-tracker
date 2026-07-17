@@ -10,7 +10,7 @@ namespace CodexUsageTray;
 
 internal sealed class WidgetWindow : Window
 {
-    public const double PreferredWidth = 340;
+    public const double PreferredWidth = 270;
     private static readonly Color LabelColor = Color.FromRgb(0x8e, 0xa9, 0xc7);
     private static readonly Color ValueColor = Color.FromRgb(0x78, 0xe0, 0xb1);
     private static readonly Color ResetColor = Color.FromRgb(0xae, 0xd0, 0xf7);
@@ -21,8 +21,8 @@ internal sealed class WidgetWindow : Window
     private readonly TextBlock weeklyReset;
     private readonly TextBlock fiveHourLabel;
     private readonly TextBlock weeklyLabel;
-    private readonly StackPanel fiveHourMetric;
-    private readonly StackPanel weeklyMetric;
+    private readonly Grid fiveHourMetric;
+    private readonly Grid weeklyMetric;
     private readonly Border divider;
     private readonly Grid usageGrid;
     private bool showFiveHour = true;
@@ -51,15 +51,15 @@ internal sealed class WidgetWindow : Window
 
         var root = new Grid { Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)) };
 
-        usageGrid = new Grid { Margin = new Thickness(8, 0, 8, 0), Cursor = Cursors.SizeAll };
+        usageGrid = new Grid { Margin = new Thickness(4, 0, 4, 0), Cursor = Cursors.SizeAll };
         usageGrid.ColumnDefinitions.Add(new ColumnDefinition());
-        usageGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        usageGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });
         usageGrid.ColumnDefinitions.Add(new ColumnDefinition());
 
-        fiveHourValue = CreateText("--", ValueColor, 39, TextAlignment.Right);
-        fiveHourReset = CreateText("", ResetColor, 44, TextAlignment.Right);
+        fiveHourValue = CreateText("--", ValueColor, 0, TextAlignment.Left);
+        fiveHourReset = CreateText("", ResetColor, 0, TextAlignment.Left);
         fiveHourLabel = CreateLabel("5H");
-        fiveHourMetric = CreateMetric(fiveHourLabel, fiveHourValue, fiveHourReset, false);
+        fiveHourMetric = CreateMetric(fiveHourLabel, fiveHourValue, fiveHourReset);
         Grid.SetColumn(fiveHourMetric, 0);
         usageGrid.Children.Add(fiveHourMetric);
 
@@ -74,10 +74,10 @@ internal sealed class WidgetWindow : Window
         Grid.SetColumn(divider, 1);
         usageGrid.Children.Add(divider);
 
-        weeklyValue = CreateText("--", ValueColor, 39, TextAlignment.Right);
-        weeklyReset = CreateText("", ResetColor, 78, TextAlignment.Right);
+        weeklyValue = CreateText("--", ValueColor, 0, TextAlignment.Left);
+        weeklyReset = CreateText("", ResetColor, 0, TextAlignment.Left);
         weeklyLabel = CreateLabel("W");
-        weeklyMetric = CreateMetric(weeklyLabel, weeklyValue, weeklyReset, true);
+        weeklyMetric = CreateMetric(weeklyLabel, weeklyValue, weeklyReset);
         Grid.SetColumn(weeklyMetric, 2);
         usageGrid.Children.Add(weeklyMetric);
         root.Children.Add(usageGrid);
@@ -133,7 +133,7 @@ internal sealed class WidgetWindow : Window
         var showWeeklyMetric = showWeekly && width >= 50;
         var showBothMetrics = showFiveHourMetric && showWeeklyMetric;
         var showLabels = width >= 180;
-        var showResetTimes = width >= 280;
+        var showResetTimes = width >= 250;
 
         fiveHourMetric.Visibility = showFiveHourMetric ? Visibility.Visible : Visibility.Collapsed;
         divider.Visibility = showBothMetrics ? Visibility.Visible : Visibility.Collapsed;
@@ -142,14 +142,23 @@ internal sealed class WidgetWindow : Window
         weeklyLabel.Visibility = showWeeklyMetric && showLabels ? Visibility.Visible : Visibility.Collapsed;
         fiveHourReset.Visibility = showFiveHourMetric && showResetTimes ? Visibility.Visible : Visibility.Collapsed;
         weeklyReset.Visibility = showWeeklyMetric && showResetTimes ? Visibility.Visible : Visibility.Collapsed;
+        SetMetricColumns(fiveHourMetric, showLabels, showResetTimes);
+        SetMetricColumns(weeklyMetric, showLabels, showResetTimes);
+        usageGrid.ColumnDefinitions[1].Width = new GridLength(
+            showBothMetrics ? (showLabels ? 18 : 12) : 0);
+        var leftAlignContent = showBothMetrics && showLabels && showResetTimes && width >= 265;
+        usageGrid.ColumnDefinitions[0].Width = leftAlignContent ? GridLength.Auto : new GridLength(1, GridUnitType.Star);
+        usageGrid.ColumnDefinitions[2].Width = leftAlignContent ? GridLength.Auto : new GridLength(1, GridUnitType.Star);
         Grid.SetColumn(fiveHourMetric, 0);
         Grid.SetColumnSpan(weeklyMetric, showBothMetrics ? 1 : 3);
         Grid.SetColumn(weeklyMetric, showBothMetrics ? 2 : 0);
         Grid.SetColumnSpan(fiveHourMetric, showBothMetrics ? 1 : 3);
-        fiveHourMetric.HorizontalAlignment = showBothMetrics ? HorizontalAlignment.Right : HorizontalAlignment.Center;
+        fiveHourMetric.HorizontalAlignment = showBothMetrics && leftAlignContent
+            ? HorizontalAlignment.Left
+            : showBothMetrics ? HorizontalAlignment.Right : HorizontalAlignment.Center;
         weeklyMetric.HorizontalAlignment = showBothMetrics ? HorizontalAlignment.Left : HorizontalAlignment.Center;
-        usageGrid.Margin = new Thickness(width < 120 ? 2 : 8, 0, width < 120 ? 2 : 8, 0);
-        divider.Margin = new Thickness(showLabels ? 8 : 4, 0, showLabels ? 8 : 4, 0);
+        usageGrid.Margin = new Thickness(8, 0, 0, 0);
+        divider.Margin = new Thickness(0);
     }
 
     public void Reveal(bool animate)
@@ -175,25 +184,40 @@ internal sealed class WidgetWindow : Window
             FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI"),
             FontSize = 13,
             FontWeight = FontWeights.SemiBold,
+            TextAlignment = TextAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center,
             Effect = CreateShadow(),
         };
     }
 
-    private static StackPanel CreateMetric(TextBlock label, TextBlock value, TextBlock reset, bool weekly)
+    private static Grid CreateMetric(TextBlock label, TextBlock value, TextBlock reset)
     {
-        var panel = new StackPanel
+        var panel = new Grid
         {
-            Orientation = Orientation.Horizontal,
             VerticalAlignment = VerticalAlignment.Center,
-            HorizontalAlignment = weekly ? HorizontalAlignment.Left : HorizontalAlignment.Right,
         };
+        panel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        panel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(4) });
+        panel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        panel.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(4) });
+        panel.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        Grid.SetColumn(label, 0);
+        Grid.SetColumn(value, 2);
+        Grid.SetColumn(reset, 4);
         panel.Children.Add(label);
-        value.Margin = new Thickness(2, 0, 0, 0);
         panel.Children.Add(value);
-        reset.Margin = new Thickness(weekly ? 6 : 0, 0, 0, 0);
         panel.Children.Add(reset);
         return panel;
+    }
+
+    private static void SetMetricColumns(Grid metric, bool showLabels, bool showResetTimes)
+    {
+        metric.ColumnDefinitions[0].Width = showLabels ? GridLength.Auto : new GridLength(0);
+        metric.ColumnDefinitions[1].Width = showLabels ? new GridLength(4) : new GridLength(0);
+        metric.ColumnDefinitions[2].Width = GridLength.Auto;
+        metric.ColumnDefinitions[3].Width = showResetTimes ? new GridLength(4) : new GridLength(0);
+        metric.ColumnDefinitions[4].Width = showResetTimes ? GridLength.Auto : new GridLength(0);
+        metric.Width = double.NaN;
     }
 
     private static TextBlock CreateText(string text, Color color, double minWidth, TextAlignment alignment)
@@ -208,6 +232,7 @@ internal sealed class WidgetWindow : Window
             FontWeight = FontWeights.SemiBold,
             TextAlignment = alignment,
             VerticalAlignment = VerticalAlignment.Center,
+            TextTrimming = TextTrimming.CharacterEllipsis,
             Effect = CreateShadow(),
         };
     }

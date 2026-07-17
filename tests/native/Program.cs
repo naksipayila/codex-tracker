@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Media;
 
 internal static class Program
 {
@@ -19,6 +20,7 @@ internal static class Program
             ("Latrix API authorization", AuthorizeLatrixApi),
             ("atomic settings persistence", PersistSettings),
             ("settings panel actions", TestSettingsPanelActions),
+            ("telemetry dashboard layout", TestTelemetryDashboardLayout),
             ("widget metric visibility", TestWidgetMetricVisibility),
             ("taskbar widget placement", TestTaskbarWidgetPlacement),
         };
@@ -108,15 +110,18 @@ internal static class Program
                 "{\"xRatio\":1.5,\"hideInFullscreen\":false}");
             var settings = NativeSettings.Load();
             Equal(1d, settings.XRatio, "ratio clamp");
+            Equal(true, settings.LaunchAtStartup, "startup default");
             Equal(false, settings.HideInFullscreen, "fullscreen load");
             Equal(true, settings.ShowFiveHour, "five-hour visibility default");
             Equal(true, settings.ShowWeekly, "weekly visibility default");
             settings.XRatio = 0.42;
+            settings.LaunchAtStartup = false;
             settings.ShowFiveHour = false;
             settings.ShowWeekly = true;
             settings.SaveWidget();
             using var widget = JsonDocument.Parse(File.ReadAllText(Path.Combine(directory, "widget-position.json")));
             Equal(0.42, widget.RootElement.GetProperty("xRatio").GetDouble(), "saved ratio");
+            Equal(false, widget.RootElement.GetProperty("launchAtStartup").GetBoolean(), "saved startup preference");
             Equal(false, widget.RootElement.GetProperty("showFiveHour").GetBoolean(), "saved five-hour visibility");
             Equal(true, widget.RootElement.GetProperty("showWeekly").GetBoolean(), "saved weekly visibility");
             if (widget.RootElement.TryGetProperty("usageProvider", out _))
@@ -170,6 +175,7 @@ internal static class Program
         Equal(392d, panel.Width, "settings panel width");
         var root = (Border)panel.Content;
         Equal(14d, root.CornerRadius.TopLeft, "settings panel corner radius");
+        Equal(Color.FromRgb(0x24, 0x11, 0x16), ((SolidColorBrush)root.Background).Color, "settings panel dark red background");
         Equal("QUICK ACTIONS", ((TextBlock)body.Children[0]).Text, "settings first section label");
         Equal("QUICK ACTIONS|PREFERENCES",
             string.Join("|", body.Children.OfType<TextBlock>()
@@ -272,13 +278,41 @@ internal static class Program
         Equal(80, compact.Width, "compact taskbar slot size");
     }
 
+    private static void TestTelemetryDashboardLayout()
+    {
+        using var panel = new TelemetryPanel(new LatrixApiClient(), "");
+        Equal(Color.FromRgb(0x18, 0x0b, 0x0f), ((SolidColorBrush)panel.Background).Color, "telemetry dark red canvas");
+        var root = (Grid)panel.Content;
+        Equal(4, root.RowDefinitions.Count, "telemetry dashboard row count");
+        Equal(900d, panel.MinWidth, "telemetry dashboard minimum width");
+        var heading = (Grid)root.Children[0];
+        var headingCopy = (StackPanel)heading.Children[0];
+        Equal("Team activity", ((TextBlock)headingCopy.Children[1]).Text, "telemetry dashboard title");
+        var summary = (Grid)root.Children[2];
+        Equal(5, summary.ColumnDefinitions.Count, "telemetry summary card count");
+        var content = (Grid)root.Children[3];
+        Equal(2, content.RowDefinitions.Count, "telemetry content row count");
+        Equal(2, content.Children.Count, "telemetry table and details panel");
+        var table = (Border)content.Children[0];
+        Equal(2, ((Grid)table.Child).RowDefinitions.Count, "telemetry table structure");
+        var toolbar = (Grid)root.Children[1];
+        var filters = (StackPanel)((StackPanel)toolbar.Children[1]).Children[0];
+        Equal(3, filters.Children.OfType<Button>().Count(), "telemetry range filter count");
+        var details = (Border)content.Children[1];
+        var detailsRoot = (Grid)details.Child;
+        Equal(3, ((StackPanel)detailsRoot.Children[1]).Children.OfType<Button>().Count(), "telemetry detail tab count");
+    }
+
     private static void TestWidgetMetricVisibility()
     {
         var widget = new WidgetWindow();
+        Equal(270d, WidgetWindow.PreferredWidth, "taskbar widget preferred width");
         var usageGrid = (Grid)((Grid)widget.Content).Children[0];
-        var fiveHour = (StackPanel)usageGrid.Children[0];
+        var fiveHour = (Grid)usageGrid.Children[0];
         var divider = (Border)usageGrid.Children[1];
-        var weekly = (StackPanel)usageGrid.Children[2];
+        var weekly = (Grid)usageGrid.Children[2];
+        if (!usageGrid.ColumnDefinitions[0].Width.IsStar || !usageGrid.ColumnDefinitions[2].Width.IsStar)
+            throw new InvalidOperationException("taskbar metric columns are not equally flexible");
 
         widget.SetUsageLabels("6H", "W");
         Equal("6H", ((TextBlock)fiveHour.Children[0]).Text, "Latrix primary label");
@@ -292,6 +326,18 @@ internal static class Program
         Equal(Visibility.Visible, fiveHour.Visibility, "visible five-hour metric");
         Equal(Visibility.Collapsed, divider.Visibility, "hidden five-hour-only divider");
         Equal(Visibility.Collapsed, weekly.Visibility, "hidden weekly metric");
+
+        widget.SetMetricVisibility(true, true);
+        Equal(18d, usageGrid.ColumnDefinitions[1].Width.Value, "taskbar metric center gap");
+        if (!usageGrid.ColumnDefinitions[0].Width.IsAuto || !usageGrid.ColumnDefinitions[2].Width.IsAuto)
+            throw new InvalidOperationException("taskbar content columns are not compact");
+        Equal(4d, fiveHour.ColumnDefinitions[1].Width.Value, "taskbar label value gap");
+        Equal(4d, fiveHour.ColumnDefinitions[3].Width.Value, "taskbar value reset gap");
+        if (!fiveHour.ColumnDefinitions[0].Width.IsAuto || !fiveHour.ColumnDefinitions[2].Width.IsAuto ||
+            !fiveHour.ColumnDefinitions[4].Width.IsAuto)
+            throw new InvalidOperationException("taskbar metric slots are not compact");
+        Equal(HorizontalAlignment.Left, fiveHour.HorizontalAlignment, "taskbar left group alignment");
+        Equal(HorizontalAlignment.Left, weekly.HorizontalAlignment, "taskbar right group alignment");
 
         widget.SetMetricVisibility(false, false);
         Equal(Visibility.Collapsed, fiveHour.Visibility, "hidden all five-hour metric");

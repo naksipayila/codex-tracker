@@ -7,6 +7,7 @@ namespace CodexUsageTray;
 internal sealed class NativeSettings
 {
     public double XRatio { get; set; } = 0.3;
+    public bool LaunchAtStartup { get; set; } = true;
     public bool HideInFullscreen { get; set; } = true;
     public bool ShowFiveHour { get; set; } = true;
     public bool ShowWeekly { get; set; } = true;
@@ -23,6 +24,9 @@ internal sealed class NativeSettings
                 var root = document.RootElement;
                 if (root.TryGetProperty("xRatio", out var ratio) && ratio.TryGetDouble(out var value))
                     settings.XRatio = Math.Clamp(value, 0, 1);
+                if (root.TryGetProperty("launchAtStartup", out var launch) &&
+                    (launch.ValueKind == JsonValueKind.True || launch.ValueKind == JsonValueKind.False))
+                    settings.LaunchAtStartup = launch.GetBoolean();
                 if (root.TryGetProperty("hideInFullscreen", out var hide) &&
                     (hide.ValueKind == JsonValueKind.True || hide.ValueKind == JsonValueKind.False))
                     settings.HideInFullscreen = hide.GetBoolean();
@@ -47,6 +51,7 @@ internal sealed class NativeSettings
         WriteJsonAtomically(Path.Combine(GetUserDataDirectory(), "widget-position.json"), new
         {
             xRatio = Math.Clamp(XRatio, 0, 1),
+            launchAtStartup = LaunchAtStartup,
             hideInFullscreen = HideInFullscreen,
             showFiveHour = ShowFiveHour,
             showWeekly = ShowWeekly,
