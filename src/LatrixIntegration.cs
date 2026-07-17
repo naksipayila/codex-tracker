@@ -128,9 +128,12 @@ internal static class LatrixUsageParser
             throw new InvalidDataException("Latrix usage response was not an object.");
         var bucket = GetNumber(result, "bucketPercent");
         var capacity = GetNumber(result, "capacityPercent");
+        var estimatedBucket = GetNumber(result, "bucketPercentEstimated");
         var weeklyUsed = GetNumber(result, "weeklyUsedPercent");
         var primary = bucket.HasValue && capacity is > 0
-            ? FormatPercent(bucket.Value / capacity.Value * 100)
+            ? FormatPercent(Math.Min(
+                bucket.Value / capacity.Value * 100,
+                estimatedBucket.GetValueOrDefault(bucket.Value) / capacity.Value * 100))
             : "--";
         var weekly = weeklyUsed.HasValue ? FormatPercent(100 - weeklyUsed.Value) : "--";
         return new UsageDisplay(
@@ -145,7 +148,7 @@ internal static class LatrixUsageParser
         result.TryGetProperty(name, out var value) && value.TryGetDouble(out var number) ? number : null;
 
     private static string FormatPercent(double value) =>
-        Math.Round(Math.Clamp(value, 0, 100), MidpointRounding.AwayFromZero).ToString("0", CultureInfo.InvariantCulture) + "%";
+        Math.Round(Math.Clamp(value, 0, 100), 2, MidpointRounding.AwayFromZero).ToString("0.##", CultureInfo.InvariantCulture) + "%";
 
     private static string FormatReset(JsonElement result, string name, bool includeDate, TimeZoneInfo timeZone)
     {

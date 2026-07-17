@@ -33,10 +33,10 @@ internal static class Program
     private static void ProjectLatrixUsage()
     {
         using var document = JsonDocument.Parse("""
-            {"bucketPercent":40,"capacityPercent":80,"slotEndsAt":"2026-07-16T12:30:00Z","weeklyUsedPercent":26,"weeklyResetsAt":"2026-07-17T08:45:00Z"}
+            {"bucketPercent":60,"capacityPercent":80,"bucketPercentEstimated":51.25,"slotEndsAt":"2026-07-16T12:30:00Z","weeklyUsedPercent":26,"weeklyResetsAt":"2026-07-17T08:45:00Z"}
             """);
         var display = LatrixUsageParser.Project(document.RootElement, TimeZoneInfo.Utc);
-        Equal("50%", display.FiveHour, "Latrix six-hour remaining");
+        Equal("64.06%", display.FiveHour, "Latrix six-hour remaining");
         Equal("74%", display.Weekly, "Latrix weekly remaining");
         Equal("12:30", display.FiveHourReset, "Latrix six-hour reset");
         Equal("17 Tem 08:45", display.WeeklyReset, "Latrix weekly reset");
@@ -49,7 +49,7 @@ internal static class Program
         {
             requests.Add((request.RequestUri!.AbsolutePath, request.Headers.Authorization!.ToString()));
             var json = request.RequestUri!.AbsolutePath == "/api/window"
-                ? "{\"bucketPercent\":25,\"capacityPercent\":50,\"weeklyUsedPercent\":10}"
+                ? "{\"bucketPercent\":25,\"capacityPercent\":50,\"bucketPercentEstimated\":20,\"weeklyUsedPercent\":10}"
                 : "{}";
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
@@ -60,7 +60,7 @@ internal static class Program
         var client = new LatrixApiClient(http);
         client.ValidateAsync("unit-test-key").GetAwaiter().GetResult();
         var display = client.ReadUsageAsync("unit-test-key", TimeZoneInfo.Utc).GetAwaiter().GetResult();
-        Equal("50%", display.FiveHour, "Latrix authorized usage");
+        Equal("40%", display.FiveHour, "Latrix authorized usage");
         Equal(2, requests.Count, "Latrix request count");
         Equal("/api/me", requests[0].Path, "Latrix validation path");
         Equal("/api/window", requests[1].Path, "Latrix usage path");
