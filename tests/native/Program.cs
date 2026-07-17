@@ -20,6 +20,7 @@ internal static class Program
             ("Latrix API authorization", AuthorizeLatrixApi),
             ("atomic settings persistence", PersistSettings),
             ("settings panel actions", TestSettingsPanelActions),
+            ("update download progress", TestUpdateDownloadProgress),
             ("telemetry dashboard layout", TestTelemetryDashboardLayout),
             ("widget metric visibility", TestWidgetMetricVisibility),
             ("taskbar widget placement", TestTaskbarWidgetPlacement),
@@ -276,6 +277,22 @@ internal static class Program
         );
         Equal(20, compact.Left, "compact taskbar slot left");
         Equal(80, compact.Width, "compact taskbar slot size");
+    }
+
+    private static void TestUpdateDownloadProgress()
+    {
+        var progress = new UpdateDownloadWindow();
+        Equal("Downloading update...", progress.StatusText, "update progress initial status");
+        Equal(true, progress.IsIndeterminate, "update progress initial mode");
+
+        progress.ReportDownload(5 * 1024 * 1024, 10 * 1024 * 1024);
+        Equal(false, progress.IsIndeterminate, "update progress determinate mode");
+        Equal(50d, progress.ProgressValue, "update download percentage");
+        Equal("5.0 MB / 10.0 MB", progress.DetailsText, "update download byte count");
+
+        progress.ReportVerifying();
+        Equal("Verifying update...", progress.StatusText, "update verification status");
+        Equal(true, progress.IsIndeterminate, "update verification mode");
     }
 
     private static void TestTelemetryDashboardLayout()

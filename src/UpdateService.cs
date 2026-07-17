@@ -10,6 +10,8 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Media;
 
 namespace CodexUsageTray;
 
@@ -163,10 +165,13 @@ internal sealed class UpdateService
         var handoff = Path.Combine(stateDirectory, $"update-handoff-{token}.ready");
         var appReady = Path.Combine(stateDirectory, $"update-app-{token}.ready");
         Process updater = null;
+        UpdateDownloadWindow progress = null;
         Directory.CreateDirectory(stateDirectory);
         try
         {
-            await DownloadReleasePackageAsync(manifest, package);
+            progress = new UpdateDownloadWindow();
+            progress.Show();
+            await DownloadReleasePackageAsync(manifest, package, progress);
             var temporaryDirectory = Path.Combine(Path.GetTempPath(), "CodexUsageTray");
             Directory.CreateDirectory(temporaryDirectory);
             var helper = Path.Combine(temporaryDirectory, $"updater-{token}.exe");
@@ -207,6 +212,8 @@ internal sealed class UpdateService
                     if (File.Exists(handoff) && File.ReadAllText(handoff).Trim() == token)
                     {
                         TryDelete(handoff);
+                        progress.Close();
+                        progress = null;
                         prepareForUpdate();
                         updater.Dispose();
                         updater = null;
@@ -236,21 +243,37 @@ internal sealed class UpdateService
             }
             CleanupFailedPackageHandoff(token, package, handoff, appReady);
             TryDelete(package);
+            try { progress?.Close(); } catch { }
             throw;
         }
     }
 
-    private async Task DownloadReleasePackageAsync(ReleaseManifest manifest, string packagePath)
+    private async Task DownloadReleasePackageAsync(
+        ReleaseManifest manifest,
+        string packagePath,
+        UpdateDownloadWindow progress
+    )
     {
         using var client = CreateHttpClient();
         using var response = await client.GetAsync(manifest.PackageUri, HttpCompletionOption.ResponseHeadersRead, applicationToken);
         response.EnsureSuccessStatusCode();
+        var totalBytes = response.Content.Headers.ContentLength ?? -1;
+        progress.ReportDownload(0, totalBytes);
         await using (var input = await response.Content.ReadAsStreamAsync(applicationToken))
         await using (var output = new FileStream(packagePath, FileMode.Create, FileAccess.Write, FileShare.None))
         {
-            await input.CopyToAsync(output, applicationToken);
+            var buffer = new byte[80 * 1024];
+            long downloadedBytes = 0;
+            int read;
+            while ((read = await input.ReadAsync(buffer.AsMemory(0, buffer.Length), applicationToken)) > 0)
+            {
+                await output.WriteAsync(buffer.AsMemory(0, read), applicationToken);
+                downloadedBytes += read;
+                progress.ReportDownload(downloadedBytes, totalBytes);
+            }
         }
-        var actualHash = ComputeFileSha256(packagePath);
+        progress.ReportVerifying();
+        var actualHash = await Task.Run(() => ComputeFileSha256(packagePath), applicationToken);
         if (!string.Equals(actualHash, manifest.Sha256, StringComparison.OrdinalIgnoreCase))
         {
             TryDelete(packagePath);
@@ -569,4 +592,124 @@ internal sealed class UpdateService
     }
 
     private readonly record struct ReleaseManifest(Version Version, Uri PackageUri, string Sha256, string Notes);
+}
+
+internal sealed class UpdateDownloadWindow : Window
+{
+    private readonly Label statusLabel;
+    private readonly Label detailsLabel;
+    private readonly ProgressBar progressBar;
+    private readonly Label percentageLabel;
+
+    public UpdateDownloadWindow()
+    {
+        Width = 430;
+        Height = 190;
+        WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        WindowStyle = WindowStyle.None;
+        ResizeMode = ResizeMode.NoResize;
+        ShowInTaskbar = false;
+        ShowActivated = true;
+        Topmost = true;
+        Background = Brushes.Transparent;
+        AllowsTransparency = true;
+        SnapsToDevicePixels = true;
+        UseLayoutRounding = true;
+
+        statusLabel = new Label
+        {
+            Content = "Downloading update...",
+            Foreground = new SolidColorBrush(Color.FromRgb(0xff, 0xf1, 0xf3)),
+            FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI"),
+            FontSize = 16,
+            FontWeight = FontWeights.SemiBold,
+            Padding = new Thickness(0),
+        };
+        detailsLabel = new Label
+        {
+            Content = "Preparing download...",
+            Foreground = new SolidColorBrush(Color.FromRgb(0xb5, 0x7e, 0x89)),
+            FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI"),
+            FontSize = 12,
+            Padding = new Thickness(0),
+            Margin = new Thickness(0, 4, 0, 12),
+        };
+        progressBar = new ProgressBar
+        {
+            Minimum = 0,
+            Maximum = 100,
+            Height = 10,
+            IsIndeterminate = true,
+            Foreground = new SolidColorBrush(Color.FromRgb(0xd0, 0x64, 0x78)),
+            Background = new SolidColorBrush(Color.FromRgb(0x4a, 0x24, 0x2e)),
+        };
+        percentageLabel = new Label
+        {
+            Content = "",
+            Foreground = new SolidColorBrush(Color.FromRgb(0xe7, 0xcd, 0xd1)),
+            FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI"),
+            FontSize = 12,
+            HorizontalContentAlignment = HorizontalAlignment.Right,
+            Padding = new Thickness(0),
+            Margin = new Thickness(0, 8, 0, 0),
+        };
+
+        var layout = new StackPanel();
+        layout.Children.Add(statusLabel);
+        layout.Children.Add(detailsLabel);
+        layout.Children.Add(progressBar);
+        layout.Children.Add(percentageLabel);
+        Content = new Border
+        {
+            Background = new SolidColorBrush(Color.FromRgb(0x24, 0x11, 0x16)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(0x63, 0x31, 0x3d)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(14),
+            Padding = new Thickness(24),
+            Effect = new System.Windows.Media.Effects.DropShadowEffect
+            {
+                BlurRadius = 30,
+                ShadowDepth = 10,
+                Opacity = 0.55,
+                Color = Colors.Black,
+            },
+            Child = layout,
+        };
+    }
+
+    internal string StatusText => statusLabel.Content as string;
+    internal string DetailsText => detailsLabel.Content as string;
+    internal double ProgressValue => progressBar.Value;
+    internal bool IsIndeterminate => progressBar.IsIndeterminate;
+
+    public void ReportDownload(long downloadedBytes, long totalBytes)
+    {
+        if (totalBytes <= 0)
+        {
+            progressBar.IsIndeterminate = true;
+            detailsLabel.Content = FormatBytes(downloadedBytes) + " downloaded";
+            percentageLabel.Content = "";
+            return;
+        }
+
+        var percent = Math.Clamp(downloadedBytes * 100d / totalBytes, 0, 100);
+        progressBar.IsIndeterminate = false;
+        progressBar.Value = percent;
+        detailsLabel.Content = $"{FormatBytes(downloadedBytes)} / {FormatBytes(totalBytes)}";
+        percentageLabel.Content = $"{percent:0}%";
+    }
+
+    public void ReportVerifying()
+    {
+        statusLabel.Content = "Verifying update...";
+        detailsLabel.Content = "Checking package integrity...";
+        progressBar.IsIndeterminate = true;
+        percentageLabel.Content = "";
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        if (bytes < 1024 * 1024) return $"{bytes / 1024d:0.0} KB";
+        return $"{bytes / (1024d * 1024d):0.0} MB";
+    }
 }
