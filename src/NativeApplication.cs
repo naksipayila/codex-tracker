@@ -12,9 +12,6 @@ using System.Windows.Interop;
 using System.Windows.Threading;
 using System.Windows.Media.Animation;
 using MediaBrushes = System.Windows.Media.Brushes;
-using MediaColor = System.Windows.Media.Color;
-using MediaFontFamily = System.Windows.Media.FontFamily;
-using MediaSolidColorBrush = System.Windows.Media.SolidColorBrush;
 
 namespace CodexUsageTray;
 
@@ -323,6 +320,7 @@ internal sealed class NativeAppController : IDisposable
                 settingsPanelRequested = false;
             };
             settingsPanel = panel;
+            panel.Opacity = 0;
             panel.Show();
             PositionSettingsPanel(panel);
             panel.RevealFromRight();
@@ -700,34 +698,48 @@ internal sealed class SettingsPanelWindow : Window
         UseLayoutRounding = true;
 
         var body = new StackPanel { Width = 356 };
+
         body.Children.Add(CreateSectionLabel("Quick actions"));
-        body.Children.Add(CreateButton(widgetVisible ? "Hide widget" : "Show widget", toggleWidget));
-        body.Children.Add(CreateButton("Open Latrix usage dashboard", openDashboard));
-        body.Children.Add(CreateButton("Open telemetry window", openTelemetry));
-        if (canRepair) body.Children.Add(CreateButton("Repair update", checkUpdate));
+        var quickActions = new StackPanel();
+        quickActions.Children.Add(CreateButton(widgetVisible ? "Hide widget" : "Show widget", toggleWidget));
+        quickActions.Children.Add(CreateButton("Open Latrix usage dashboard", openDashboard));
+        quickActions.Children.Add(CreateButton("Open telemetry window", openTelemetry));
+        if (canRepair) quickActions.Children.Add(CreateButton("Repair update", checkUpdate));
+        body.Children.Add(CreateCard(quickActions));
+
         body.Children.Add(CreateSeparator());
 
         body.Children.Add(CreateSectionLabel("Preferences"));
-        body.Children.Add(CreateButton("Check for updates now", checkUpdate, true));
-        body.Children.Add(CreateToggle("Launch at Windows startup", launchAtStartup, setLaunchAtStartup));
-        body.Children.Add(CreateToggle("Hide in fullscreen apps", hideInFullscreen, setHideInFullscreen));
-        body.Children.Add(CreateToggle("Show 6H usage", showFiveHour, setShowFiveHour));
-        body.Children.Add(CreateToggle("Show weekly usage", showWeekly, setShowWeekly));
+        var prefs = new StackPanel();
+        prefs.Children.Add(CreateButton("Check for updates now", checkUpdate, true));
+        prefs.Children.Add(CreateToggle("Launch at Windows startup", launchAtStartup, setLaunchAtStartup));
+        prefs.Children.Add(CreateToggle("Hide in fullscreen apps", hideInFullscreen, setHideInFullscreen));
+        prefs.Children.Add(CreateToggle("Show 6H usage", showFiveHour, setShowFiveHour));
+        prefs.Children.Add(CreateToggle("Show weekly usage", showWeekly, setShowWeekly));
+        body.Children.Add(CreateCard(prefs));
+
+        static Border CreateCard(StackPanel content)
+        {
+            content.Margin = new Thickness(0, 2, 0, 0);
+            return new Border
+            {
+                Background = Theme.SurfaceBrush,
+                BorderBrush = Theme.BorderBrush,
+                BorderThickness = new Thickness(1),
+                CornerRadius = Theme.RadiusLarge,
+                Padding = new Thickness(14, 12, 14, 8),
+                Child = content,
+            };
+        }
 
         Content = new Border
         {
-            Background = new MediaSolidColorBrush(MediaColor.FromRgb(0x16, 0x16, 0x16)),
-            BorderBrush = new MediaSolidColorBrush(MediaColor.FromRgb(0x3d, 0x3d, 0x3d)),
+            Background = Theme.SurfaceBrush,
+            BorderBrush = Theme.BorderBrush,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(14),
             Padding = new Thickness(18),
-            Effect = new System.Windows.Media.Effects.DropShadowEffect
-            {
-                BlurRadius = 30,
-                ShadowDepth = 10,
-                Opacity = 0.55,
-                Color = MediaColor.FromRgb(0, 0, 0),
-            },
+            Effect = Theme.PanelShadow(),
             Child = body,
         };
         Closing += (_, _) => closing = true;
@@ -767,20 +779,20 @@ internal sealed class SettingsPanelWindow : Window
     private static Button CreateButton(string text, Action action, bool accent = false)
     {
         var background = accent
-            ? new MediaSolidColorBrush(MediaColor.FromRgb(0x56, 0x56, 0x56))
-            : new MediaSolidColorBrush(MediaColor.FromRgb(0x23, 0x23, 0x23));
+            ? Theme.AccentBrush
+            : Theme.ButtonNormalBrush;
         var hoverBackground = accent
-            ? new MediaSolidColorBrush(MediaColor.FromRgb(0x70, 0x70, 0x70))
-            : new MediaSolidColorBrush(MediaColor.FromRgb(0x34, 0x34, 0x34));
+            ? Theme.AccentHoverBrush
+            : Theme.ButtonHoverBrush;
         var pressedBackground = accent
-            ? new MediaSolidColorBrush(MediaColor.FromRgb(0x3d, 0x3d, 0x3d))
-            : new MediaSolidColorBrush(MediaColor.FromRgb(0x19, 0x19, 0x19));
+            ? Theme.AccentPressedBrush
+            : Theme.ButtonPressedBrush;
         var border = accent
-            ? new MediaSolidColorBrush(MediaColor.FromRgb(0x80, 0x80, 0x80))
-            : new MediaSolidColorBrush(MediaColor.FromRgb(0x45, 0x45, 0x45));
+            ? Theme.AccentBrush
+            : Theme.ButtonBorderBrush;
         var hoverBorder = accent
-            ? new MediaSolidColorBrush(MediaColor.FromRgb(0x98, 0x98, 0x98))
-            : new MediaSolidColorBrush(MediaColor.FromRgb(0x60, 0x60, 0x60));
+            ? Theme.AccentHoverBrush
+            : Theme.ButtonBorderHoverBrush;
         var button = new Button
         {
             Content = text,
@@ -788,11 +800,11 @@ internal sealed class SettingsPanelWindow : Window
             VerticalContentAlignment = VerticalAlignment.Center,
             Padding = new Thickness(12, 9, 12, 9),
             BorderThickness = new Thickness(1),
-            Margin = new Thickness(0, 3, 0, 3),
-            Foreground = new MediaSolidColorBrush(MediaColor.FromRgb(0xe0, 0xe0, 0xe0)),
-            FontFamily = new MediaFontFamily("Segoe UI Variable Text, Segoe UI"),
-            FontSize = 13,
-            FontWeight = accent ? FontWeights.SemiBold : FontWeights.Normal,
+            Margin = new Thickness(0, 2, 0, 2),
+            Foreground = Theme.TextPrimaryBrush,
+            FontFamily = Theme.FontFamilyValue,
+            FontSize = Theme.FontSizeBody,
+            FontWeight = accent ? Theme.FontWeightSemibold : Theme.FontWeightNormal,
             Cursor = System.Windows.Input.Cursors.Hand,
         };
         var template = new ControlTemplate(typeof(Button));
@@ -841,10 +853,10 @@ internal sealed class SettingsPanelWindow : Window
         return new TextBlock
         {
             Text = text.ToUpperInvariant(),
-            Foreground = new MediaSolidColorBrush(MediaColor.FromRgb(0x8a, 0x8a, 0x8a)),
-            FontFamily = new MediaFontFamily("Segoe UI Variable Text, Segoe UI"),
-            FontSize = 10,
-            FontWeight = FontWeights.SemiBold,
+            Foreground = Theme.TextMutedBrush,
+            FontFamily = Theme.FontFamilyValue,
+            FontSize = Theme.FontSizeCaption,
+            FontWeight = Theme.FontWeightSemibold,
             Margin = new Thickness(2, 0, 0, 7),
         };
     }
@@ -855,9 +867,9 @@ internal sealed class SettingsPanelWindow : Window
         {
             Content = text,
             IsChecked = value,
-            Foreground = new MediaSolidColorBrush(MediaColor.FromRgb(0xd0, 0xd0, 0xd0)),
-            FontFamily = new MediaFontFamily("Segoe UI Variable Text, Segoe UI"),
-            FontSize = 13,
+            Foreground = Theme.TextPrimaryBrush,
+            FontFamily = Theme.FontFamilyValue,
+            FontSize = Theme.FontSizeBody,
             Padding = new Thickness(0),
             Margin = new Thickness(0, 3, 0, 3),
             Cursor = System.Windows.Input.Cursors.Hand,
@@ -879,7 +891,7 @@ internal sealed class SettingsPanelWindow : Window
         track.SetValue(FrameworkElement.WidthProperty, 32d);
         track.SetValue(FrameworkElement.HeightProperty, 18d);
         track.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
-        track.SetValue(Border.BackgroundProperty, new MediaSolidColorBrush(MediaColor.FromRgb(0x3a, 0x3a, 0x3a)));
+        track.SetValue(Border.BackgroundProperty, Theme.ButtonNormalBrush);
         track.SetValue(Border.CornerRadiusProperty, new CornerRadius(9));
 
         var knob = new FrameworkElementFactory(typeof(System.Windows.Shapes.Ellipse));
@@ -890,7 +902,7 @@ internal sealed class SettingsPanelWindow : Window
         knob.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
         knob.SetValue(FrameworkElement.MarginProperty, new Thickness(3, 0, 0, 0));
         knob.SetValue(System.Windows.Shapes.Shape.FillProperty,
-            new MediaSolidColorBrush(MediaColor.FromRgb(0xa0, 0xa0, 0xa0)));
+            Theme.TextMutedBrush);
         track.AppendChild(knob);
         content.AppendChild(track);
 
@@ -908,15 +920,13 @@ internal sealed class SettingsPanelWindow : Window
 
         var style = new Style(typeof(CheckBox));
         style.Setters.Add(new Setter(Control.TemplateProperty, template));
-        style.Setters.Add(new Setter(Control.BackgroundProperty,
-            new MediaSolidColorBrush(MediaColor.FromRgb(0x1e, 0x1e, 0x1e))));
-        style.Setters.Add(new Setter(Control.BorderBrushProperty,
-            new MediaSolidColorBrush(MediaColor.FromRgb(0x38, 0x38, 0x38))));
+        style.Setters.Add(new Setter(Control.BackgroundProperty, Theme.ElevatedBrush));
+        style.Setters.Add(new Setter(Control.BorderBrushProperty, Theme.BorderBrush));
         var hoverTrigger = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
         hoverTrigger.Setters.Add(new Setter(Control.BackgroundProperty,
-            new MediaSolidColorBrush(MediaColor.FromRgb(0x34, 0x34, 0x34))));
+            Theme.ButtonHoverBrush));
         hoverTrigger.Setters.Add(new Setter(Control.BorderBrushProperty,
-            new MediaSolidColorBrush(MediaColor.FromRgb(0x54, 0x54, 0x54))));
+            Theme.BorderStrongBrush));
         style.Triggers.Add(hoverTrigger);
         var checkedTrigger = new Trigger
         {
@@ -924,9 +934,9 @@ internal sealed class SettingsPanelWindow : Window
             Value = true,
         };
         checkedTrigger.Setters.Add(new Setter(Border.BackgroundProperty,
-            new MediaSolidColorBrush(MediaColor.FromRgb(0x56, 0x56, 0x56)), "Track"));
+            Theme.AccentBrush, "Track"));
         checkedTrigger.Setters.Add(new Setter(System.Windows.Shapes.Shape.FillProperty,
-            new MediaSolidColorBrush(MediaColor.FromRgb(0xe0, 0xe0, 0xe0)), "Knob"));
+            Theme.TextPrimaryBrush, "Knob"));
         checkedTrigger.Setters.Add(new Setter(FrameworkElement.MarginProperty, new Thickness(16, 0, 0, 0), "Knob"));
         template.Triggers.Add(checkedTrigger);
         toggle.Style = style;
@@ -940,7 +950,7 @@ internal sealed class SettingsPanelWindow : Window
         return new Border
         {
             Height = 1,
-            Background = new MediaSolidColorBrush(MediaColor.FromRgb(0x45, 0x45, 0x45)),
+            Background = Theme.BorderBrush,
             Margin = new Thickness(0, 12, 0, 12),
         };
     }

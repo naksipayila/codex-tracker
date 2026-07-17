@@ -619,18 +619,18 @@ internal sealed class UpdateDownloadWindow : Window
         statusLabel = new Label
         {
             Content = "Downloading update...",
-            Foreground = new SolidColorBrush(Color.FromRgb(0xff, 0xf1, 0xf3)),
-            FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI"),
-            FontSize = 16,
-            FontWeight = FontWeights.SemiBold,
+            Foreground = Theme.TextPrimaryBrush,
+            FontFamily = Theme.FontFamilyValue,
+            FontSize = Theme.FontSizeH2,
+            FontWeight = Theme.FontWeightSemibold,
             Padding = new Thickness(0),
         };
         detailsLabel = new Label
         {
             Content = "Preparing download...",
-            Foreground = new SolidColorBrush(Color.FromRgb(0xb5, 0x7e, 0x89)),
-            FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI"),
-            FontSize = 12,
+            Foreground = Theme.TextSecondaryBrush,
+            FontFamily = Theme.FontFamilyValue,
+            FontSize = Theme.FontSizeSmall,
             Padding = new Thickness(0),
             Margin = new Thickness(0, 4, 0, 12),
         };
@@ -640,15 +640,15 @@ internal sealed class UpdateDownloadWindow : Window
             Maximum = 100,
             Height = 10,
             IsIndeterminate = true,
-            Foreground = new SolidColorBrush(Color.FromRgb(0xd0, 0x64, 0x78)),
-            Background = new SolidColorBrush(Color.FromRgb(0x4a, 0x24, 0x2e)),
+            Foreground = Theme.AccentBrush,
+            Background = Theme.ButtonNormalBrush,
         };
         percentageLabel = new Label
         {
             Content = "",
-            Foreground = new SolidColorBrush(Color.FromRgb(0xe7, 0xcd, 0xd1)),
-            FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI"),
-            FontSize = 12,
+            Foreground = Theme.TextSecondaryBrush,
+            FontFamily = Theme.FontFamilyValue,
+            FontSize = Theme.FontSizeSmall,
             HorizontalContentAlignment = HorizontalAlignment.Right,
             Padding = new Thickness(0),
             Margin = new Thickness(0, 8, 0, 0),
@@ -661,18 +661,12 @@ internal sealed class UpdateDownloadWindow : Window
         layout.Children.Add(percentageLabel);
         Content = new Border
         {
-            Background = new SolidColorBrush(Color.FromRgb(0x24, 0x11, 0x16)),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(0x63, 0x31, 0x3d)),
+            Background = Theme.SurfaceBrush,
+            BorderBrush = Theme.BorderBrush,
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(14),
             Padding = new Thickness(24),
-            Effect = new System.Windows.Media.Effects.DropShadowEffect
-            {
-                BlurRadius = 30,
-                ShadowDepth = 10,
-                Opacity = 0.55,
-                Color = Colors.Black,
-            },
+            Effect = Theme.PanelShadow(),
             Child = layout,
         };
     }

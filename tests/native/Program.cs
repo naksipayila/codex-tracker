@@ -1,5 +1,7 @@
 using CodexUsageTray;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -176,7 +178,7 @@ internal static class Program
         Equal(392d, panel.Width, "settings panel width");
         var root = (Border)panel.Content;
         Equal(14d, root.CornerRadius.TopLeft, "settings panel corner radius");
-        Equal(Color.FromRgb(0x16, 0x16, 0x16), ((SolidColorBrush)root.Background).Color, "settings panel dark gray background");
+        Equal(Color.FromRgb(0x14, 0x14, 0x14), ((SolidColorBrush)root.Background).Color, "settings panel dark gray background");
         Equal("QUICK ACTIONS", ((TextBlock)body.Children[0]).Text, "settings first section label");
         Equal("QUICK ACTIONS|PREFERENCES",
             string.Join("|", body.Children.OfType<TextBlock>()
@@ -186,7 +188,7 @@ internal static class Program
         Equal(1, separators.Length, "settings section separators");
         foreach (var separator in separators)
             Equal(1d, separator.Height, "settings separator height");
-        var hideButton = body.Children.OfType<Button>().Single(button => button.Content as string == "Hide widget");
+        var hideButton = FindControls<Button>(body).Single(button => button.Content as string == "Hide widget");
         Equal(DependencyProperty.UnsetValue, hideButton.ReadLocalValue(Control.BackgroundProperty), "button background style");
         Equal(DependencyProperty.UnsetValue, hideButton.ReadLocalValue(Control.BorderBrushProperty), "button border style");
         Click(body, "Hide widget");
@@ -197,14 +199,14 @@ internal static class Program
         Equal(1, openDashboard, "dashboard action");
         Equal(1, openTelemetry, "telemetry action");
         Equal(1, repairUpdate, "repair action");
-        if (body.Children.OfType<Button>().Any(button =>
+        if (FindControls<Button>(body).Any(button =>
             (button.Content as string)?.Contains("Codex", StringComparison.OrdinalIgnoreCase) == true))
             throw new InvalidOperationException("The settings panel still exposes a Codex action.");
-        if (body.Children.OfType<Button>().Any(button =>
+        if (FindControls<Button>(body).Any(button =>
             (button.Content as string)?.Contains("usage", StringComparison.OrdinalIgnoreCase) == true &&
              button.Content as string != "Open Latrix usage dashboard"))
             throw new InvalidOperationException("The settings panel still exposes a usage source selector.");
-        if (body.Children.OfType<Button>().Any(button => button.Content as string == "Refresh usage"))
+        if (FindControls<Button>(body).Any(button => button.Content as string == "Refresh usage"))
             throw new InvalidOperationException("The manual refresh action is still present.");
 
         Toggle(body, "Launch at Windows startup", true);
@@ -237,10 +239,10 @@ internal static class Program
         var hiddenBody = (StackPanel)((Border)hiddenPanel.Content).Child;
         Click(hiddenBody, "Show widget");
         Equal(1, showWidget, "show widget action");
-        if (hiddenBody.Children.OfType<Button>().Any(button =>
+        if (FindControls<Button>(hiddenBody).Any(button =>
             (button.Content as string)?.Contains("Codex", StringComparison.OrdinalIgnoreCase) == true))
             throw new InvalidOperationException("The settings panel still exposes a Codex action.");
-        if (hiddenBody.Children.OfType<Button>().Any(button =>
+        if (FindControls<Button>(hiddenBody).Any(button =>
              (button.Content as string)?.Contains("usage", StringComparison.OrdinalIgnoreCase) == true &&
              button.Content as string != "Open Latrix usage dashboard"))
             throw new InvalidOperationException("The settings panel still exposes a usage source selector.");
@@ -298,7 +300,7 @@ internal static class Program
     private static void TestTelemetryDashboardLayout()
     {
         using var panel = new TelemetryPanel(new LatrixApiClient(), "");
-        Equal(Color.FromRgb(0x0f, 0x0f, 0x0f), ((SolidColorBrush)panel.Background).Color, "telemetry dark gray canvas");
+        Equal(Color.FromRgb(0x0d, 0x0d, 0x0d), ((SolidColorBrush)panel.Background).Color, "telemetry dark gray canvas");
         var root = (Grid)panel.Content;
         Equal(4, root.RowDefinitions.Count, "telemetry dashboard row count");
         Equal(900d, panel.MinWidth, "telemetry dashboard minimum width");
@@ -363,14 +365,23 @@ internal static class Program
 
     private static void Click(StackPanel body, string text)
     {
-        var button = body.Children.OfType<Button>().Single(candidate => candidate.Content as string == text);
+        var button = FindControls<Button>(body).Single(candidate => candidate.Content as string == text);
         button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
     }
 
     private static void Toggle(StackPanel body, string text, bool value)
     {
-        var toggle = body.Children.OfType<CheckBox>().Single(candidate => candidate.Content as string == text);
+        var toggle = FindControls<CheckBox>(body).Single(candidate => candidate.Content as string == text);
         toggle.IsChecked = value;
+    }
+
+    private static IEnumerable<T> FindControls<T>(DependencyObject parent) where T : DependencyObject
+    {
+        foreach (var child in LogicalTreeHelper.GetChildren(parent).OfType<DependencyObject>())
+        {
+            if (child is T match) yield return match;
+            foreach (var descendant in FindControls<T>(child)) yield return descendant;
+        }
     }
 
     private static void Equal<T>(T expected, T actual, string label)

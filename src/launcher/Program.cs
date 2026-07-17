@@ -2336,6 +2336,8 @@ internal static class Program
             Text = "Codex Tracker Update";
             Width = 390;
             Height = 155;
+            BackColor = System.Drawing.Color.FromArgb(20, 20, 20);
+            ForeColor = System.Drawing.Color.FromArgb(232, 232, 232);
             AutoScaleMode = AutoScaleMode.Dpi;
             FormBorderStyle = FormBorderStyle.FixedDialog;
             StartPosition = FormStartPosition.CenterScreen;
@@ -2351,6 +2353,7 @@ internal static class Program
                 Padding = new Padding(18),
                 ColumnCount = 1,
                 RowCount = 3,
+                BackColor = System.Drawing.Color.FromArgb(20, 20, 20),
             };
             layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
             layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));
@@ -2364,6 +2367,7 @@ internal static class Program
                 AutoEllipsis = true,
                 Dock = DockStyle.Fill,
                 Padding = new Padding(0, 0, 0, 10),
+                ForeColor = System.Drawing.Color.FromArgb(232, 232, 232),
             };
             progressBar = new ProgressBar
             {
@@ -2380,6 +2384,7 @@ internal static class Program
                 AutoSize = true,
                 Dock = DockStyle.Fill,
                 Padding = new Padding(0, 8, 0, 0),
+                ForeColor = System.Drawing.Color.FromArgb(173, 173, 173),
             };
 
             layout.Controls.Add(statusLabel, 0, 0);

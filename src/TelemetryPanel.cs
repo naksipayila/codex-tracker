@@ -14,20 +14,26 @@ namespace CodexUsageTray;
 
 internal sealed class TelemetryPanel : UserControl, IDisposable
 {
-    private static readonly Color CanvasColor = Color.FromRgb(0x0f, 0x0f, 0x0f);
-    private static readonly Color SurfaceColor = Color.FromRgb(0x16, 0x16, 0x16);
-    private static readonly Color RaisedColor = Color.FromRgb(0x23, 0x23, 0x23);
-    private static readonly Color HeaderColor = Color.FromRgb(0x2a, 0x2a, 0x2a);
-    private static readonly Color BorderColor = Color.FromRgb(0x3d, 0x3d, 0x3d);
-    private static readonly Color MutedColor = Color.FromRgb(0xa0, 0xa0, 0xa0);
-    private static readonly Color DimColor = Color.FromRgb(0x70, 0x70, 0x70);
-    private static readonly Color TextColor = Color.FromRgb(0xe0, 0xe0, 0xe0);
-    private static readonly Color AccentColor = Color.FromRgb(0x80, 0x80, 0x80);
-    private static readonly Color BlueColor = Color.FromRgb(0x98, 0x98, 0x98);
-    private static readonly Color GreenColor = Color.FromRgb(0x48, 0xd4, 0x9b);
-    private static readonly Color RedColor = Color.FromRgb(0xff, 0x7b, 0x86);
-    private static readonly Color AmberColor = Color.FromRgb(0xf1, 0xb8, 0x5b);
     private static readonly double[] ColumnWidths = { 205, 78, 82, 82, 92, 86, 62, 62, 78, 96 };
+
+    private static Color BgCanvas => Theme.Background;
+    private static Color BgSurface => Theme.Surface;
+    private static Color BgElevated => Theme.Elevated;
+    private static Color BgHeader => Theme.Header;
+    private static Color BgBorder => Theme.Border;
+    private static Color TextSecondary => Theme.TextSecondary;
+    private static Color TextMuted => Theme.TextMuted;
+    private static Color TextPrimary => Theme.TextPrimary;
+    private static Color Accent => Theme.Accent;
+    private static Color Success => Theme.Success;
+    private static Color Error => Theme.Error;
+    private static Color Warning => Theme.Warning;
+    private Color rowEven => BgSurface;
+    private Color rowOdd => Color.FromRgb(0x18, 0x18, 0x18);
+    private static Color RowHover => Color.FromRgb(0x2e, 0x2e, 0x2e);
+    private static Color SelectedBg => Color.FromRgb(0x48, 0x48, 0x48);
+    private static Color ScrollThumb => Theme.ScrollThumb;
+    private static Color ScrollHover => Accent;
 
     private readonly LatrixApiClient latrix;
     private readonly string apiKey;
@@ -55,7 +61,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
     {
         this.latrix = latrix;
         this.apiKey = apiKey;
-        Background = new SolidColorBrush(CanvasColor);
+        Background = new SolidColorBrush(BgCanvas);
         MinWidth = 900;
         MinHeight = 500;
         SnapsToDevicePixels = true;
@@ -75,14 +81,14 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         headingCopy.Children.Add(new TextBlock
         {
             Text = "LATRIX TELEMETRY",
-            Foreground = new SolidColorBrush(AccentColor),
+            Foreground = new SolidColorBrush(Accent),
             FontSize = 11,
             FontWeight = FontWeights.SemiBold,
         });
         headingCopy.Children.Add(new TextBlock
         {
             Text = "Team activity",
-            Foreground = new SolidColorBrush(TextColor),
+            Foreground = new SolidColorBrush(TextPrimary),
             FontSize = 28,
             FontWeight = FontWeights.SemiBold,
             Margin = new Thickness(0, 4, 0, 3),
@@ -90,7 +96,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         headingCopy.Children.Add(new TextBlock
         {
             Text = "A clear view of usage, performance and model activity.",
-            Foreground = new SolidColorBrush(MutedColor),
+            Foreground = new SolidColorBrush(TextSecondary),
             FontSize = 12,
         });
         heading.Children.Add(headingCopy);
@@ -98,7 +104,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         status = new TextBlock
         {
             Text = "Ready to sync telemetry",
-            Foreground = new SolidColorBrush(MutedColor),
+            Foreground = new SolidColorBrush(TextSecondary),
             FontSize = 11,
             VerticalAlignment = VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis,
@@ -110,8 +116,8 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
 
         var liveBadge = new Border
         {
-            Background = new SolidColorBrush(Color.FromArgb(34, AccentColor.R, AccentColor.G, AccentColor.B)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(90, AccentColor.R, AccentColor.G, AccentColor.B)),
+            Background = new SolidColorBrush(Color.FromArgb(34, Accent.R, Accent.G, Accent.B)),
+            BorderBrush = new SolidColorBrush(Color.FromArgb(90, Accent.R, Accent.G, Accent.B)),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(16),
             Padding = new Thickness(12, 7, 12, 7),
@@ -125,14 +131,14 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
                     {
                         Width = 7,
                         Height = 7,
-                        Background = new SolidColorBrush(GreenColor),
+                        Background = new SolidColorBrush(Success),
                         CornerRadius = new CornerRadius(4),
                         Margin = new Thickness(0, 0, 7, 0),
                     },
                     new TextBlock
                     {
                         Text = "LIVE SYNC",
-                        Foreground = new SolidColorBrush(AccentColor),
+                        Foreground = new SolidColorBrush(Accent),
                         FontSize = 10,
                         FontWeight = FontWeights.SemiBold,
                     },
@@ -150,7 +156,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         var rangeLabel = new TextBlock
         {
             Text = "ACTIVITY RANGE",
-            Foreground = new SolidColorBrush(DimColor),
+            Foreground = new SolidColorBrush(TextMuted),
             FontSize = 10,
             FontWeight = FontWeights.SemiBold,
             VerticalAlignment = VerticalAlignment.Center,
@@ -176,18 +182,18 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         activeValue = CreateMetricValue("--");
         errorsValue = CreateMetricValue("--");
         latencyValue = CreateMetricValue("--");
-        summary.Children.Add(CreateSummaryCard(0, "TOTAL TOKENS", totalTokensValue, "Across this period", BlueColor, out _));
-        summary.Children.Add(CreateSummaryCard(1, "REQUESTS", requestsValue, "All team members", AccentColor, out _));
-        summary.Children.Add(CreateSummaryCard(2, "ACTIVE NOW", activeValue, "Currently online", GreenColor, out _));
-        summary.Children.Add(CreateSummaryCard(3, "ERRORS", errorsValue, "Needs attention", RedColor, out errorsAccent));
-        summary.Children.Add(CreateSummaryCard(4, "AVG LATENCY", latencyValue, "Across active users", AmberColor, out latencyAccent));
+        summary.Children.Add(CreateSummaryCard(0, "TOTAL TOKENS", totalTokensValue, "Across this period", Accent, out _));
+        summary.Children.Add(CreateSummaryCard(1, "REQUESTS", requestsValue, "All team members", Accent, out _));
+        summary.Children.Add(CreateSummaryCard(2, "ACTIVE NOW", activeValue, "Currently online", Success, out _));
+        summary.Children.Add(CreateSummaryCard(3, "ERRORS", errorsValue, "Needs attention", Error, out errorsAccent));
+        summary.Children.Add(CreateSummaryCard(4, "AVG LATENCY", latencyValue, "Across active users", Warning, out latencyAccent));
         Grid.SetRow(summary, 2);
         root.Children.Add(summary);
 
         table = new Border
         {
-            Background = new SolidColorBrush(SurfaceColor),
-            BorderBrush = new SolidColorBrush(BorderColor),
+            Background = new SolidColorBrush(BgSurface),
+            BorderBrush = new SolidColorBrush(BgBorder),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(10),
             ClipToBounds = true,
@@ -242,20 +248,20 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         if (loading || lifetime.IsCancellationRequested) return;
         loading = true;
         refresh.IsEnabled = false;
-        status.Foreground = new SolidColorBrush(MutedColor);
+        status.Foreground = new SolidColorBrush(TextSecondary);
         status.Text = "Syncing latest telemetry...";
         try
         {
             if (string.IsNullOrWhiteSpace(apiKey)) throw new InvalidOperationException("No Latrix API key was found.");
             var users = await latrix.ReadTelemetryAsync(apiKey, selectedRangeDays, lifetime.Token);
             Render(users);
-            status.Foreground = new SolidColorBrush(MutedColor);
+            status.Foreground = new SolidColorBrush(TextSecondary);
             status.Text = $"{users.Count} people  /  updated {DateTime.Now:HH:mm:ss}  /  auto-refresh every 20s";
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
         catch (Exception error)
         {
-            status.Foreground = new SolidColorBrush(RedColor);
+            status.Foreground = new SolidColorBrush(Error);
             status.Text = error.Message;
             Render(Array.Empty<TelemetryPerson>());
         }
@@ -279,14 +285,14 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         requestsValue.Text = totalRequests.ToString("N0", CultureInfo.InvariantCulture);
         activeValue.Text = activeUsers.ToString(CultureInfo.InvariantCulture);
         errorsValue.Text = totalErrors.ToString("N0", CultureInfo.InvariantCulture);
-        errorsValue.Foreground = new SolidColorBrush(totalErrors > 0 ? RedColor : TextColor);
-        errorsAccent.Background = new SolidColorBrush(totalErrors > 0 ? RedColor : DimColor);
+        errorsValue.Foreground = new SolidColorBrush(totalErrors > 0 ? Error : TextPrimary);
+        errorsAccent.Background = new SolidColorBrush(totalErrors > 0 ? Error : TextMuted);
         latencyValue.Text = latencyUsers.Length == 0
             ? "--"
             : FormatLatency(latencyUsers.Average(user => user.AverageLatencyMs));
         var highLatency = latencyUsers.Any(user => user.AverageLatencyMs >= 15000);
-        latencyValue.Foreground = new SolidColorBrush(highLatency ? AmberColor : TextColor);
-        latencyAccent.Background = new SolidColorBrush(highLatency ? AmberColor : DimColor);
+        latencyValue.Foreground = new SolidColorBrush(highLatency ? Warning : TextPrimary);
+        latencyAccent.Background = new SolidColorBrush(highLatency ? Warning : TextMuted);
 
         RenderRows();
     }
@@ -323,9 +329,9 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             HorizontalContentAlignment = HorizontalAlignment.Left,
             Height = 36,
             Padding = new Thickness(16, 0, 16, 0),
-            Foreground = new SolidColorBrush(MutedColor),
-            Background = new SolidColorBrush(Color.FromRgb(0x1e, 0x1e, 0x1e)),
-            BorderBrush = new SolidColorBrush(BorderColor),
+            Foreground = new SolidColorBrush(TextSecondary),
+            Background = Theme.ButtonNormalBrush,
+            BorderBrush = new SolidColorBrush(BgBorder),
             BorderThickness = new Thickness(0, 1, 0, 0),
             FontSize = 10,
             FontWeight = FontWeights.SemiBold,
@@ -347,7 +353,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         var style = new Style(typeof(Button));
         style.Setters.Add(new Setter(Control.TemplateProperty, template));
         var hover = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
-        hover.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(RaisedColor)));
+        hover.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(BgElevated)));
         style.Triggers.Add(hover);
         button.Style = style;
         button.Click += (_, _) =>
@@ -369,7 +375,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         {
             MinWidth = ColumnWidths.Sum(),
             Height = header ? 40 : 52,
-            Background = new SolidColorBrush(header ? HeaderColor : RaisedColor),
+            Background = new SolidColorBrush(header ? BgHeader : BgElevated),
         };
         AddColumns(grid);
         for (var i = 0; i < values.Length; i++)
@@ -382,7 +388,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
                 TextAlignment = i == 0 ? TextAlignment.Left : TextAlignment.Right,
                 FontSize = 10,
                 FontWeight = FontWeights.SemiBold,
-                Foreground = new SolidColorBrush(header ? MutedColor : TextColor),
+                Foreground = new SolidColorBrush(header ? TextSecondary : TextPrimary),
                 TextTrimming = TextTrimming.CharacterEllipsis,
             };
             Grid.SetColumn(text, i);
@@ -393,7 +399,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
 
     private Border CreatePersonRow(TelemetryPerson user, int index)
     {
-        var baseColor = index % 2 == 0 ? SurfaceColor : Color.FromRgb(0x1a, 0x1a, 0x1a);
+        var baseColor = index % 2 == 0 ? BgSurface : rowOdd;
         var row = new Grid
         {
             MinWidth = ColumnWidths.Sum(),
@@ -429,7 +435,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         nameLine.Children.Add(new TextBlock
         {
             Text = user.Name,
-            Foreground = new SolidColorBrush(TextColor),
+            Foreground = new SolidColorBrush(TextPrimary),
             FontSize = 12,
             FontWeight = FontWeights.SemiBold,
             TextTrimming = TextTrimming.CharacterEllipsis,
@@ -437,8 +443,8 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         if (!string.IsNullOrWhiteSpace(user.Role))
             nameLine.Children.Add(new Border
             {
-                Background = new SolidColorBrush(Color.FromRgb(0x32, 0x32, 0x32)),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0x54, 0x54, 0x54)),
+                Background = Theme.ElevatedBrush,
+                BorderBrush = Theme.BorderStrongBrush,
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(4),
                 Margin = new Thickness(7, 0, 0, 0),
@@ -446,7 +452,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
                 Child = new TextBlock
                 {
                     Text = user.Role.ToUpperInvariant(),
-                    Foreground = new SolidColorBrush(BlueColor),
+                    Foreground = new SolidColorBrush(Accent),
                     FontSize = 8,
                     FontWeight = FontWeights.Bold,
                 },
@@ -455,7 +461,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         identity.Children.Add(new TextBlock
         {
             Text = user.Online ? "Online" : FormatPresence(user.LastActive),
-            Foreground = new SolidColorBrush(user.Online ? GreenColor : DimColor),
+            Foreground = new SolidColorBrush(user.Online ? Success : TextMuted),
             FontSize = 10,
             Margin = new Thickness(0, 3, 0, 0),
         });
@@ -466,19 +472,19 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         AddCell(row, FormatTokens(Math.Max(0, user.InputTokens - user.CachedTokens)), 2);
         AddCell(row, FormatTokens(user.OutputTokens), 3);
         AddCell(row, FormatTokens(user.ReasoningTokens), 4);
-        AddCell(row, FormatTokens(user.TotalTokens), 5, true, AccentColor);
+        AddCell(row, FormatTokens(user.TotalTokens), 5, true, Accent);
         AddCell(row, user.Models.ToString("N0", CultureInfo.InvariantCulture), 6);
-        AddCell(row, user.Errors.ToString("N0", CultureInfo.InvariantCulture), 7, false, user.Errors > 0 ? RedColor : MutedColor);
+        AddCell(row, user.Errors.ToString("N0", CultureInfo.InvariantCulture), 7, false, user.Errors > 0 ? Error : TextSecondary);
         AddCell(row, user.AverageLatencyMs > 0 ? FormatLatency(user.AverageLatencyMs) : "--", 8, false,
-            user.AverageLatencyMs >= 15000 ? AmberColor : MutedColor);
+            user.AverageLatencyMs >= 15000 ? Warning : TextSecondary);
         AddCell(row, user.LastActive == "now" ? "Active now" : user.LastActive, 9, false,
-            user.Online ? GreenColor : MutedColor, TextAlignment.Left);
+            user.Online ? Success : TextSecondary, TextAlignment.Left);
 
-        row.MouseEnter += (_, _) => row.Background = new SolidColorBrush(Color.FromRgb(0x34, 0x34, 0x34));
+        row.MouseEnter += (_, _) => row.Background = new SolidColorBrush(RowHover);
         row.MouseLeave += (_, _) => row.Background = new SolidColorBrush(baseColor);
         return new Border
         {
-            BorderBrush = new SolidColorBrush(BorderColor),
+            BorderBrush = new SolidColorBrush(BgBorder),
             BorderThickness = new Thickness(0, 0, 0, 1),
             Child = row,
         };
@@ -501,7 +507,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             TextAlignment = alignment,
             FontSize = 11,
             FontWeight = bold ? FontWeights.Bold : FontWeights.Normal,
-            Foreground = new SolidColorBrush(color ?? TextColor),
+            Foreground = new SolidColorBrush(color ?? TextPrimary),
             TextTrimming = TextTrimming.CharacterEllipsis,
         }, column);
     }
@@ -520,11 +526,11 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         thumbBorder.SetValue(Border.CornerRadiusProperty, new CornerRadius(4));
         thumbTemplate.VisualTree = thumbBorder;
         var thumbStyle = new Style(typeof(Thumb));
-        thumbStyle.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(0x45, 0x45, 0x45))));
+        thumbStyle.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(ScrollThumb)));
         thumbStyle.Setters.Add(new Setter(FrameworkElement.MinHeightProperty, 28d));
         thumbStyle.Setters.Add(new Setter(Control.TemplateProperty, thumbTemplate));
         var thumbHover = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
-        thumbHover.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(AccentColor)));
+        thumbHover.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(Accent)));
         thumbStyle.Triggers.Add(thumbHover);
 
         var scrollTemplate = new ControlTemplate(typeof(ScrollBar));
@@ -535,7 +541,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         scrollTemplate.VisualTree = track;
         var scrollStyle = new Style(typeof(ScrollBar));
         scrollStyle.Setters.Add(new Setter(FrameworkElement.WidthProperty, 10d));
-        scrollStyle.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(0x0f, 0x0f, 0x0f))));
+        scrollStyle.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(BgCanvas)));
         scrollStyle.Setters.Add(new Setter(Control.TemplateProperty, scrollTemplate));
         scroll.Resources.Add(typeof(Thumb), thumbStyle);
         scroll.Resources.Add(typeof(ScrollBar), scrollStyle);
@@ -543,8 +549,8 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
 
     private static Button CreateFilterButton(string text, bool selected)
     {
-        var button = CreatePillButton(text, selected ? Color.FromRgb(0x56, 0x56, 0x56) : SurfaceColor,
-            selected ? TextColor : MutedColor, 48);
+        var button = CreatePillButton(text, selected ? Accent : BgSurface,
+            selected ? TextPrimary : TextSecondary, 48);
         button.Margin = new Thickness(0, 0, 1, 0);
         return button;
     }
@@ -559,7 +565,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             Padding = new Thickness(7, 3, 7, 3),
             Background = new SolidColorBrush(background),
             Foreground = new SolidColorBrush(foreground),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(0x38, 0x38, 0x38)),
+            BorderBrush = Theme.ButtonBorderBrush,
             BorderThickness = new Thickness(1),
             FontSize = 10,
             FontWeight = FontWeights.SemiBold,
@@ -581,7 +587,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         var style = new Style(typeof(Button));
         style.Setters.Add(new Setter(Control.TemplateProperty, template));
         var hover = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
-        hover.Setters.Add(new Setter(Control.BorderBrushProperty, new SolidColorBrush(AccentColor)));
+        hover.Setters.Add(new Setter(Control.BorderBrushProperty, new SolidColorBrush(Accent)));
         style.Triggers.Add(hover);
         button.Style = style;
         return button;
@@ -598,7 +604,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
                 selectedRangeDays = option.Item2;
                 foreach (var filter in rangeFilters.Children.OfType<Button>())
                     filter.Background = new SolidColorBrush((int)filter.Tag == selectedRangeDays
-                        ? Color.FromRgb(0x56, 0x56, 0x56) : SurfaceColor);
+                        ? Accent : BgSurface);
                 _ = RefreshAsync();
             };
             button.Tag = option.Item2;
@@ -612,7 +618,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         return new TextBlock
         {
             Text = text,
-            Foreground = new SolidColorBrush(TextColor),
+            Foreground = new SolidColorBrush(TextPrimary),
             FontSize = 22,
             FontWeight = FontWeights.SemiBold,
         };
@@ -625,7 +631,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         content.Children.Add(new TextBlock
         {
             Text = label,
-            Foreground = new SolidColorBrush(DimColor),
+            Foreground = new SolidColorBrush(TextMuted),
             FontSize = 9,
             FontWeight = FontWeights.SemiBold,
         });
@@ -633,15 +639,15 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         content.Children.Add(new TextBlock
         {
             Text = detail,
-            Foreground = new SolidColorBrush(MutedColor),
+            Foreground = new SolidColorBrush(TextSecondary),
             FontSize = 10,
             Margin = new Thickness(0, 3, 0, 0),
         });
         var card = new Grid();
         card.Children.Add(new Border
         {
-            Background = new SolidColorBrush(SurfaceColor),
-            BorderBrush = new SolidColorBrush(BorderColor),
+            Background = new SolidColorBrush(BgSurface),
+            BorderBrush = new SolidColorBrush(BgBorder),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(9),
         });
@@ -667,9 +673,9 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             MinWidth = 84,
             Height = 34,
             Padding = new Thickness(12, 4, 12, 4),
-            Background = new SolidColorBrush(Color.FromRgb(0x56, 0x56, 0x56)),
+            Background = new SolidColorBrush(Accent),
             Foreground = Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.FromRgb(0x80, 0x80, 0x80)),
+            BorderBrush = new SolidColorBrush(Accent),
             BorderThickness = new Thickness(1),
             FontSize = 11,
             FontWeight = FontWeights.SemiBold,
@@ -693,10 +699,10 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         style.Setters.Add(new Setter(Control.BackgroundProperty, button.Background));
         style.Setters.Add(new Setter(Control.BorderBrushProperty, button.BorderBrush));
         var hover = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
-        hover.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(0x70, 0x70, 0x70))));
+        hover.Setters.Add(new Setter(Control.BackgroundProperty, Theme.AccentHoverBrush));
         style.Triggers.Add(hover);
         var pressed = new Trigger { Property = ButtonBase.IsPressedProperty, Value = true };
-        pressed.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(0x3d, 0x3d, 0x3d))));
+        pressed.Setters.Add(new Setter(Control.BackgroundProperty, Theme.AccentPressedBrush));
         style.Triggers.Add(pressed);
         button.Style = style;
         button.Click += async (_, _) => await action();
@@ -708,7 +714,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         return new TextBlock
         {
             Text = "No telemetry data for this period.",
-            Foreground = new SolidColorBrush(MutedColor),
+            Foreground = new SolidColorBrush(TextSecondary),
             FontSize = 12,
             HorizontalAlignment = HorizontalAlignment.Center,
             TextAlignment = TextAlignment.Center,
@@ -727,7 +733,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
 
     private static Color GetAvatarColor(string name)
     {
-        var colors = new[] { BlueColor, AccentColor, Color.FromRgb(0x60, 0x60, 0x60), Color.FromRgb(0x80, 0x80, 0x80) };
+        var colors = new[] { Accent, Accent, Theme.ButtonBorderHover, Accent };
         var hash = 17;
         foreach (var character in name ?? "") hash = unchecked(hash * 31 + character);
         return colors[(hash & int.MaxValue) % colors.Length];
@@ -760,7 +766,7 @@ internal sealed class TelemetryScrollBarTrack : Track
     {
         Thumb = new Thumb
         {
-            Background = new SolidColorBrush(Color.FromRgb(0x45, 0x45, 0x45)),
+            Background = Theme.ScrollThumbBrush,
             MinHeight = 28,
         };
     }

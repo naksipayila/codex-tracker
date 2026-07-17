@@ -11,9 +11,6 @@ namespace CodexUsageTray;
 internal sealed class WidgetWindow : Window
 {
     public const double PreferredWidth = 270;
-    private static readonly Color LabelColor = Color.FromRgb(0x8e, 0xa9, 0xc7);
-    private static readonly Color ValueColor = Color.FromRgb(0x78, 0xe0, 0xb1);
-    private static readonly Color ResetColor = Color.FromRgb(0xae, 0xd0, 0xf7);
 
     private readonly TextBlock fiveHourValue;
     private readonly TextBlock fiveHourReset;
@@ -56,8 +53,8 @@ internal sealed class WidgetWindow : Window
         usageGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });
         usageGrid.ColumnDefinitions.Add(new ColumnDefinition());
 
-        fiveHourValue = CreateText("--", ValueColor, 0, TextAlignment.Left);
-        fiveHourReset = CreateText("", ResetColor, 0, TextAlignment.Left);
+        fiveHourValue = CreateText("--", Theme.TextSecondary, 0, TextAlignment.Left);
+        fiveHourReset = CreateText("", Theme.TextMuted, 0, TextAlignment.Left);
         fiveHourLabel = CreateLabel("5H");
         fiveHourMetric = CreateMetric(fiveHourLabel, fiveHourValue, fiveHourReset);
         Grid.SetColumn(fiveHourMetric, 0);
@@ -68,14 +65,14 @@ internal sealed class WidgetWindow : Window
             Width = 1,
             Height = 22,
             Margin = new Thickness(8, 0, 8, 0),
-            Background = new SolidColorBrush(Color.FromArgb(163, 112, 150, 188)),
+            Background = new SolidColorBrush(Color.FromArgb(153, Theme.Border.R, Theme.Border.G, Theme.Border.B)),
             VerticalAlignment = VerticalAlignment.Center,
         };
         Grid.SetColumn(divider, 1);
         usageGrid.Children.Add(divider);
 
-        weeklyValue = CreateText("--", ValueColor, 0, TextAlignment.Left);
-        weeklyReset = CreateText("", ResetColor, 0, TextAlignment.Left);
+        weeklyValue = CreateText("--", Theme.TextSecondary, 0, TextAlignment.Left);
+        weeklyReset = CreateText("", Theme.TextMuted, 0, TextAlignment.Left);
         weeklyLabel = CreateLabel("W");
         weeklyMetric = CreateMetric(weeklyLabel, weeklyValue, weeklyReset);
         Grid.SetColumn(weeklyMetric, 2);
@@ -180,13 +177,13 @@ internal sealed class WidgetWindow : Window
         return new TextBlock
         {
             Text = text,
-            Foreground = new SolidColorBrush(LabelColor),
-            FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI"),
-            FontSize = 13,
+            Foreground = Theme.TextMutedBrush,
+            FontFamily = Theme.FontFamilyValue,
+            FontSize = Theme.FontSizeBody,
             FontWeight = FontWeights.SemiBold,
             TextAlignment = TextAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center,
-            Effect = CreateShadow(),
+            Effect = Theme.WidgetShadow,
         };
     }
 
@@ -227,24 +224,13 @@ internal sealed class WidgetWindow : Window
             Text = text,
             MinWidth = minWidth,
             Foreground = new SolidColorBrush(color),
-            FontFamily = new FontFamily("Segoe UI Variable Text, Segoe UI"),
-            FontSize = 13,
+            FontFamily = Theme.FontFamilyValue,
+            FontSize = Theme.FontSizeBody,
             FontWeight = FontWeights.SemiBold,
             TextAlignment = alignment,
             VerticalAlignment = VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis,
-            Effect = CreateShadow(),
-        };
-    }
-
-    private static System.Windows.Media.Effects.DropShadowEffect CreateShadow()
-    {
-        return new System.Windows.Media.Effects.DropShadowEffect
-        {
-            BlurRadius = 2,
-            ShadowDepth = 1,
-            Opacity = 0.7,
-            Color = Colors.Black,
+            Effect = Theme.WidgetShadow,
         };
     }
 
