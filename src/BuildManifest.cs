@@ -12,6 +12,7 @@ namespace CodexUsageTray
             "global.json",
             "src/CodexUsageTray.csproj",
             "src/app.manifest",
+            "src/BuildManifest.cs",
             "src/NativeApplication.cs",
             "src/StartupRegistration.cs",
             "src/NativeSettings.cs",

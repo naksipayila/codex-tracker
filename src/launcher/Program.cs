@@ -116,6 +116,12 @@ internal static class Program
                 return true;
             }
 
+            if (File.Exists(installedExecutable) && IsExecutableVersionAtMost(sourceExecutable, installedExecutable))
+            {
+                StartInstalledApplication(installedExecutable, installDirectory);
+                return true;
+            }
+
             InstallExecutableAtomically(sourceExecutable, installedExecutable);
         }
         catch (Exception)
@@ -125,7 +131,11 @@ internal static class Program
             return true;
         }
 
-        if (hadStartupRegistration) StartupRegistration.SetEnabled(installDirectory, true);
+        if (hadStartupRegistration)
+        {
+            try { StartupRegistration.SetEnabled(installDirectory, true); }
+            catch { }
+        }
         StartInstalledApplication(installedExecutable, installDirectory);
         return true;
     }
@@ -179,6 +189,20 @@ internal static class Program
             }
         }
         return false;
+    }
+
+    private static bool IsExecutableVersionAtMost(string source, string installed)
+    {
+        try
+        {
+            var sourceVersion = AssemblyName.GetAssemblyName(source).Version;
+            var installedVersion = AssemblyName.GetAssemblyName(installed).Version;
+            return sourceVersion != null && installedVersion != null && sourceVersion <= installedVersion;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static void StartInstalledApplication(string executable, string directory)
@@ -1156,7 +1180,7 @@ internal static class Program
         {
             throw new InvalidOperationException("The installed executable does not match the release package.");
         }
-        ValidatePackageLauncher(options, launcher);
+        ValidatePackageLauncher(options, launcher, true);
         reportProgress("Verifying native update...", 82);
         return WritePackagePendingUpdateState(options, "verified");
     }
@@ -1184,7 +1208,7 @@ internal static class Program
         {
             throw new InvalidOperationException("The previous executable could not be restored.");
         }
-        ValidatePackageLauncher(options, launcher);
+        ValidatePackageLauncher(options, launcher, false);
         pendingContent = WritePackagePendingUpdateState(options, "rolled-back");
         reportProgress("Restarting previous version...", 97);
         TryDeleteFile(options.AppReadyPath);
@@ -1212,7 +1236,7 @@ internal static class Program
         return true;
     }
 
-    private static void ValidatePackageLauncher(UpdateOptions options, string launcher)
+    private static void ValidatePackageLauncher(UpdateOptions options, string launcher, bool validateVersion)
     {
         var token = Guid.NewGuid().ToString("N");
         var readyPath = Path.Combine(options.StateDirectory, "launcher-self-test-" + token + ".ready");
@@ -1233,6 +1257,13 @@ internal static class Program
                 response.Length - separator - 1 != 64)
             {
                 throw new InvalidOperationException("The release launcher failed its compatibility self-test.");
+            }
+            if (validateVersion)
+            {
+                var actualVersion = AssemblyName.GetAssemblyName(launcher).Version;
+                Version expectedVersion;
+                if (!IsReleaseVersion(options.TargetVersion, out expectedVersion) || actualVersion != expectedVersion)
+                    throw new InvalidOperationException("The release launcher version does not match the release manifest.");
             }
         }
         finally
@@ -1492,7 +1523,7 @@ internal static class Program
             options.TargetVersion = RequireOption(values, "--target-version");
             Version packageVersion;
             if (!IsSha256(options.PackageSha256) || !IsSha256(options.ExpectedExecutableSha256) ||
-                !Version.TryParse(options.TargetVersion, out packageVersion) || packageVersion <= new Version(0, 0))
+                !IsReleaseVersion(options.TargetVersion, out packageVersion))
             {
                 throw new ArgumentException("The package updater received invalid release metadata.");
             }
@@ -2054,6 +2085,21 @@ internal static class Program
                 (character >= 'A' && character <= 'F'))) return false;
         }
         return true;
+    }
+
+    private static bool IsReleaseVersion(string value, out Version version)
+    {
+        version = null;
+        if (string.IsNullOrWhiteSpace(value)) return false;
+        var parts = value.Trim().Split('.');
+        if (parts.Length != 3) return false;
+        var numbers = new int[3];
+        for (var index = 0; index < parts.Length; index++)
+        {
+            if (!int.TryParse(parts[index], out numbers[index]) || numbers[index] < 0) return false;
+        }
+        version = new Version(numbers[0], numbers[1], numbers[2]);
+        return version > new Version(0, 0, 0);
     }
 
     private static string QuoteArgument(string value)

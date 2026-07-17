@@ -24,6 +24,7 @@ $script:BuildInputs = @(
     "global.json",
     "src/CodexUsageTray.csproj",
     "src/app.manifest",
+    "src/BuildManifest.cs",
     "src/NativeApplication.cs",
     "src/StartupRegistration.cs",
     "src/NativeSettings.cs",
@@ -36,7 +37,7 @@ $script:BuildInputs = @(
     "src/launcher/build.ps1",
     "src/launcher/icon.ico"
 )
-$script:RequiredFiles = @($script:BuildInputs + "src/BuildManifest.cs")
+$script:RequiredFiles = @($script:BuildInputs)
 $script:Csc = "$env:WINDIR\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 
 function Write-Text([string] $Path, [string] $Content) {

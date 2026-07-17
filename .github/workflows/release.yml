@@ -35,6 +35,13 @@ jobs:
         shell: cmd
         run: dotnet run --project tools\CodexTracker.Tooling\CodexTracker.Tooling.csproj --configuration Release -- check
 
+      - name: Run updater fault-injection tests
+        shell: pwsh
+        run: |
+          .\tests\updater\Invoke-UpdaterTests.ps1 `
+            -SourceRoot $env:GITHUB_WORKSPACE `
+            -ScratchRoot (Join-Path $env:RUNNER_TEMP "codex-updater-tests")
+
       - name: Create GitHub Release
         shell: cmd
         env:

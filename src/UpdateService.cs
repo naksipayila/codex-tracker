@@ -107,7 +107,8 @@ internal sealed class UpdateService
     {
         var manifest = await ReadReleaseManifestAsync();
         var currentVersion = GetCurrentVersion();
-        if (manifest.Version <= currentVersion && !RepairNeeded)
+        if (manifest.Version < currentVersion ||
+            (manifest.Version == currentVersion && !RepairNeeded))
         {
             if (!startup) System.Windows.MessageBox.Show("Codex Tracker is up to date.", "Codex Tracker",
                 MessageBoxButton.OK, MessageBoxImage.Information);
@@ -140,14 +141,13 @@ internal sealed class UpdateService
         {
             PropertyNameCaseInsensitive = true,
         });
-        if (document == null || !Version.TryParse(document.Version, out var version) || version <= new Version(0, 0) ||
+        if (document == null || !IsReleaseVersion(document.Version, out var version) ||
             string.IsNullOrWhiteSpace(document.PackageUrl) || !IsSha256(document.Sha256))
         {
             throw new InvalidDataException("The release update manifest is invalid.");
         }
         if (!Uri.TryCreate(document.PackageUrl, UriKind.Absolute, out var packageUri) ||
-            packageUri.Scheme != Uri.UriSchemeHttps ||
-            !string.Equals(packageUri.Host, "github.com", StringComparison.OrdinalIgnoreCase))
+            !IsTrustedPackageUri(packageUri, version))
         {
             throw new InvalidDataException("The release update package URL is not trusted.");
         }
@@ -160,6 +160,9 @@ internal sealed class UpdateService
         var token = Guid.NewGuid().ToString("N");
         var stateDirectory = GetStateDirectory();
         var package = Path.Combine(stateDirectory, $"release-{token}.exe");
+        var handoff = Path.Combine(stateDirectory, $"update-handoff-{token}.ready");
+        var appReady = Path.Combine(stateDirectory, $"update-app-{token}.ready");
+        Process updater = null;
         Directory.CreateDirectory(stateDirectory);
         try
         {
@@ -168,8 +171,6 @@ internal sealed class UpdateService
             Directory.CreateDirectory(temporaryDirectory);
             var helper = Path.Combine(temporaryDirectory, $"updater-{token}.exe");
             File.Copy(Path.Combine(applicationDirectory, "CodexTracker.exe"), helper, true);
-            var handoff = Path.Combine(stateDirectory, $"update-handoff-{token}.ready");
-            var appReady = Path.Combine(stateDirectory, $"update-app-{token}.ready");
             var log = Path.Combine(stateDirectory, "update.log");
             var result = GetResultPath();
             TryDelete(handoff);
@@ -196,7 +197,7 @@ internal sealed class UpdateService
             Add(startInfo, "--log", log);
             Add(startInfo, "--result", result);
             Add(startInfo, "--token", token);
-            using var updater = Process.Start(startInfo) ?? throw new InvalidOperationException("Windows did not start the update helper.");
+            updater = Process.Start(startInfo) ?? throw new InvalidOperationException("Windows did not start the update helper.");
             var deadline = DateTime.UtcNow.AddSeconds(10);
             while (DateTime.UtcNow < deadline)
             {
@@ -207,6 +208,8 @@ internal sealed class UpdateService
                     {
                         TryDelete(handoff);
                         prepareForUpdate();
+                        updater.Dispose();
+                        updater = null;
                         return;
                     }
                 }
@@ -219,6 +222,19 @@ internal sealed class UpdateService
         }
         catch
         {
+            if (updater != null)
+            {
+                try
+                {
+                    if (!updater.HasExited) updater.Kill(true);
+                    updater.WaitForExit(5000);
+                }
+                catch
+                {
+                }
+                updater.Dispose();
+            }
+            CleanupFailedPackageHandoff(token, package, handoff, appReady);
             TryDelete(package);
             throw;
         }
@@ -263,6 +279,26 @@ internal sealed class UpdateService
     private static bool IsSha256(string value) =>
         !string.IsNullOrWhiteSpace(value) && value.Length == 64 && value.All(character =>
             character is >= '0' and <= '9' or >= 'a' and <= 'f' or >= 'A' and <= 'F');
+
+    private static bool IsReleaseVersion(string value, out Version version)
+    {
+        version = null;
+        if (string.IsNullOrWhiteSpace(value)) return false;
+        var parts = value.Trim().Split('.');
+        if (parts.Length != 3 || parts.Any(part => !int.TryParse(part, out var number) || number < 0))
+            return false;
+        version = new Version(int.Parse(parts[0]), int.Parse(parts[1]), int.Parse(parts[2]));
+        return version > new Version(0, 0, 0);
+    }
+
+    private static bool IsTrustedPackageUri(Uri packageUri, Version version)
+    {
+        var expectedPath = "/naksipayila/codex-tracker/releases/download/v" +
+            version.ToString(3) + "/CodexTracker.exe";
+        return packageUri.Scheme == Uri.UriSchemeHttps &&
+            string.Equals(packageUri.Host, "github.com", StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(packageUri.AbsolutePath.TrimEnd('/'), expectedPath, StringComparison.OrdinalIgnoreCase);
+    }
 
     private static string ComputeFileSha256(string path)
     {
@@ -498,6 +534,30 @@ internal sealed class UpdateService
     private static void TryDelete(string path)
     {
         try { File.Delete(path); } catch { }
+    }
+
+    private void CleanupFailedPackageHandoff(
+        string token,
+        string package,
+        string handoff,
+        string appReady
+    )
+    {
+        TryDelete(handoff);
+        TryDelete(appReady);
+        TryDelete(package);
+        var pending = GetPendingPath();
+        try
+        {
+            var pendingContent = File.Exists(pending) ? File.ReadAllText(pending) : "";
+            if (!pendingContent.Contains("|" + token + "|", StringComparison.Ordinal)) return;
+            File.Delete(pending);
+            var lockPath = GetLockPath();
+            if (File.Exists(lockPath)) File.Delete(lockPath);
+        }
+        catch
+        {
+        }
     }
 
     private sealed class ReleaseManifestDocument
