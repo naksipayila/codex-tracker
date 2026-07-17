@@ -307,6 +307,9 @@ internal static class Program
         Equal("Team activity", ((TextBlock)headingCopy.Children[1]).Text, "telemetry dashboard title");
         var summary = (Grid)root.Children[2];
         Equal(5, summary.ColumnDefinitions.Count, "telemetry summary card count");
+        Equal(5, summary.Children.Count, "telemetry summary card children");
+        for (var index = 0; index < summary.Children.Count; index++)
+            Equal(index, Grid.GetColumn(summary.Children[index]), "telemetry summary card column");
         var content = (Grid)root.Children[3];
         Equal(2, content.RowDefinitions.Count, "telemetry content row count");
         Equal(2, content.Children.Count, "telemetry table and details panel");

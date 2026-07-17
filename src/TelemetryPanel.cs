@@ -1101,6 +1101,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         card.Children.Add(accentBar);
         card.Children.Add(content);
         var wrapper = new Border { Child = card, Margin = new Thickness(column == 0 ? 0 : 5, 0, column == 4 ? 0 : 5, 0) };
+        Grid.SetColumn(wrapper, column);
         return wrapper;
     }
 
