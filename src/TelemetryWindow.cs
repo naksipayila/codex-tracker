@@ -17,7 +17,7 @@ internal sealed class TelemetryWindow : Window
         MinHeight = 600;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         ShowActivated = true;
-        Background = new SolidColorBrush(Color.FromRgb(0x18, 0x0b, 0x0f));
+        Background = new SolidColorBrush(Color.FromRgb(0x0f, 0x0f, 0x0f));
         WindowStyle = WindowStyle.SingleBorderWindow;
         telemetry = new TelemetryPanel(latrix, apiKey);
         Content = telemetry;

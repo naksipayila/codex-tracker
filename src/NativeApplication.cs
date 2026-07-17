@@ -716,8 +716,8 @@ internal sealed class SettingsPanelWindow : Window
 
         Content = new Border
         {
-            Background = new MediaSolidColorBrush(MediaColor.FromRgb(0x24, 0x11, 0x16)),
-            BorderBrush = new MediaSolidColorBrush(MediaColor.FromRgb(0x63, 0x31, 0x3d)),
+            Background = new MediaSolidColorBrush(MediaColor.FromRgb(0x16, 0x16, 0x16)),
+            BorderBrush = new MediaSolidColorBrush(MediaColor.FromRgb(0x3d, 0x3d, 0x3d)),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(14),
             Padding = new Thickness(18),
@@ -767,20 +767,20 @@ internal sealed class SettingsPanelWindow : Window
     private static Button CreateButton(string text, Action action, bool accent = false)
     {
         var background = accent
-            ? new MediaSolidColorBrush(MediaColor.FromRgb(0x8f, 0x2e, 0x45))
-            : new MediaSolidColorBrush(MediaColor.FromRgb(0x32, 0x18, 0x21));
+            ? new MediaSolidColorBrush(MediaColor.FromRgb(0x56, 0x56, 0x56))
+            : new MediaSolidColorBrush(MediaColor.FromRgb(0x23, 0x23, 0x23));
         var hoverBackground = accent
-            ? new MediaSolidColorBrush(MediaColor.FromRgb(0xb4, 0x4c, 0x63))
-            : new MediaSolidColorBrush(MediaColor.FromRgb(0x45, 0x1d, 0x2a));
+            ? new MediaSolidColorBrush(MediaColor.FromRgb(0x70, 0x70, 0x70))
+            : new MediaSolidColorBrush(MediaColor.FromRgb(0x34, 0x34, 0x34));
         var pressedBackground = accent
-            ? new MediaSolidColorBrush(MediaColor.FromRgb(0x61, 0x1e, 0x2e))
-            : new MediaSolidColorBrush(MediaColor.FromRgb(0x27, 0x12, 0x18));
+            ? new MediaSolidColorBrush(MediaColor.FromRgb(0x3d, 0x3d, 0x3d))
+            : new MediaSolidColorBrush(MediaColor.FromRgb(0x19, 0x19, 0x19));
         var border = accent
-            ? new MediaSolidColorBrush(MediaColor.FromRgb(0xd0, 0x64, 0x78))
-            : new MediaSolidColorBrush(MediaColor.FromRgb(0x6f, 0x3a, 0x47));
+            ? new MediaSolidColorBrush(MediaColor.FromRgb(0x80, 0x80, 0x80))
+            : new MediaSolidColorBrush(MediaColor.FromRgb(0x45, 0x45, 0x45));
         var hoverBorder = accent
-            ? new MediaSolidColorBrush(MediaColor.FromRgb(0xe6, 0x8f, 0xa0))
-            : new MediaSolidColorBrush(MediaColor.FromRgb(0x96, 0x60, 0x70));
+            ? new MediaSolidColorBrush(MediaColor.FromRgb(0x98, 0x98, 0x98))
+            : new MediaSolidColorBrush(MediaColor.FromRgb(0x60, 0x60, 0x60));
         var button = new Button
         {
             Content = text,
@@ -789,7 +789,7 @@ internal sealed class SettingsPanelWindow : Window
             Padding = new Thickness(12, 9, 12, 9),
             BorderThickness = new Thickness(1),
             Margin = new Thickness(0, 3, 0, 3),
-            Foreground = new MediaSolidColorBrush(MediaColor.FromRgb(0xff, 0xf1, 0xf3)),
+            Foreground = new MediaSolidColorBrush(MediaColor.FromRgb(0xe0, 0xe0, 0xe0)),
             FontFamily = new MediaFontFamily("Segoe UI Variable Text, Segoe UI"),
             FontSize = 13,
             FontWeight = accent ? FontWeights.SemiBold : FontWeights.Normal,
@@ -841,7 +841,7 @@ internal sealed class SettingsPanelWindow : Window
         return new TextBlock
         {
             Text = text.ToUpperInvariant(),
-            Foreground = new MediaSolidColorBrush(MediaColor.FromRgb(0xb5, 0x7e, 0x89)),
+            Foreground = new MediaSolidColorBrush(MediaColor.FromRgb(0x8a, 0x8a, 0x8a)),
             FontFamily = new MediaFontFamily("Segoe UI Variable Text, Segoe UI"),
             FontSize = 10,
             FontWeight = FontWeights.SemiBold,
@@ -855,7 +855,7 @@ internal sealed class SettingsPanelWindow : Window
         {
             Content = text,
             IsChecked = value,
-            Foreground = new MediaSolidColorBrush(MediaColor.FromRgb(0xe7, 0xcd, 0xd1)),
+            Foreground = new MediaSolidColorBrush(MediaColor.FromRgb(0xd0, 0xd0, 0xd0)),
             FontFamily = new MediaFontFamily("Segoe UI Variable Text, Segoe UI"),
             FontSize = 13,
             Padding = new Thickness(0),
@@ -879,7 +879,7 @@ internal sealed class SettingsPanelWindow : Window
         track.SetValue(FrameworkElement.WidthProperty, 32d);
         track.SetValue(FrameworkElement.HeightProperty, 18d);
         track.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
-        track.SetValue(Border.BackgroundProperty, new MediaSolidColorBrush(MediaColor.FromRgb(0x5d, 0x29, 0x35)));
+        track.SetValue(Border.BackgroundProperty, new MediaSolidColorBrush(MediaColor.FromRgb(0x3a, 0x3a, 0x3a)));
         track.SetValue(Border.CornerRadiusProperty, new CornerRadius(9));
 
         var knob = new FrameworkElementFactory(typeof(System.Windows.Shapes.Ellipse));
@@ -890,7 +890,7 @@ internal sealed class SettingsPanelWindow : Window
         knob.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
         knob.SetValue(FrameworkElement.MarginProperty, new Thickness(3, 0, 0, 0));
         knob.SetValue(System.Windows.Shapes.Shape.FillProperty,
-            new MediaSolidColorBrush(MediaColor.FromRgb(0xb3, 0x84, 0x8d)));
+            new MediaSolidColorBrush(MediaColor.FromRgb(0xa0, 0xa0, 0xa0)));
         track.AppendChild(knob);
         content.AppendChild(track);
 
@@ -909,14 +909,14 @@ internal sealed class SettingsPanelWindow : Window
         var style = new Style(typeof(CheckBox));
         style.Setters.Add(new Setter(Control.TemplateProperty, template));
         style.Setters.Add(new Setter(Control.BackgroundProperty,
-            new MediaSolidColorBrush(MediaColor.FromRgb(0x2b, 0x14, 0x1b))));
+            new MediaSolidColorBrush(MediaColor.FromRgb(0x1e, 0x1e, 0x1e))));
         style.Setters.Add(new Setter(Control.BorderBrushProperty,
-            new MediaSolidColorBrush(MediaColor.FromRgb(0x4a, 0x24, 0x2e))));
+            new MediaSolidColorBrush(MediaColor.FromRgb(0x38, 0x38, 0x38))));
         var hoverTrigger = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
         hoverTrigger.Setters.Add(new Setter(Control.BackgroundProperty,
-            new MediaSolidColorBrush(MediaColor.FromRgb(0x45, 0x1d, 0x2a))));
+            new MediaSolidColorBrush(MediaColor.FromRgb(0x34, 0x34, 0x34))));
         hoverTrigger.Setters.Add(new Setter(Control.BorderBrushProperty,
-            new MediaSolidColorBrush(MediaColor.FromRgb(0x75, 0x3c, 0x4b))));
+            new MediaSolidColorBrush(MediaColor.FromRgb(0x54, 0x54, 0x54))));
         style.Triggers.Add(hoverTrigger);
         var checkedTrigger = new Trigger
         {
@@ -924,9 +924,9 @@ internal sealed class SettingsPanelWindow : Window
             Value = true,
         };
         checkedTrigger.Setters.Add(new Setter(Border.BackgroundProperty,
-            new MediaSolidColorBrush(MediaColor.FromRgb(0x8f, 0x2e, 0x45)), "Track"));
+            new MediaSolidColorBrush(MediaColor.FromRgb(0x56, 0x56, 0x56)), "Track"));
         checkedTrigger.Setters.Add(new Setter(System.Windows.Shapes.Shape.FillProperty,
-            new MediaSolidColorBrush(MediaColor.FromRgb(0xff, 0xf1, 0xf3)), "Knob"));
+            new MediaSolidColorBrush(MediaColor.FromRgb(0xe0, 0xe0, 0xe0)), "Knob"));
         checkedTrigger.Setters.Add(new Setter(FrameworkElement.MarginProperty, new Thickness(16, 0, 0, 0), "Knob"));
         template.Triggers.Add(checkedTrigger);
         toggle.Style = style;
@@ -940,7 +940,7 @@ internal sealed class SettingsPanelWindow : Window
         return new Border
         {
             Height = 1,
-            Background = new MediaSolidColorBrush(MediaColor.FromRgb(0x5f, 0x2e, 0x3a)),
+            Background = new MediaSolidColorBrush(MediaColor.FromRgb(0x45, 0x45, 0x45)),
             Margin = new Thickness(0, 12, 0, 12),
         };
     }

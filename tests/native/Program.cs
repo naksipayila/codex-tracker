@@ -176,7 +176,7 @@ internal static class Program
         Equal(392d, panel.Width, "settings panel width");
         var root = (Border)panel.Content;
         Equal(14d, root.CornerRadius.TopLeft, "settings panel corner radius");
-        Equal(Color.FromRgb(0x24, 0x11, 0x16), ((SolidColorBrush)root.Background).Color, "settings panel dark red background");
+        Equal(Color.FromRgb(0x16, 0x16, 0x16), ((SolidColorBrush)root.Background).Color, "settings panel dark gray background");
         Equal("QUICK ACTIONS", ((TextBlock)body.Children[0]).Text, "settings first section label");
         Equal("QUICK ACTIONS|PREFERENCES",
             string.Join("|", body.Children.OfType<TextBlock>()
@@ -298,7 +298,7 @@ internal static class Program
     private static void TestTelemetryDashboardLayout()
     {
         using var panel = new TelemetryPanel(new LatrixApiClient(), "");
-        Equal(Color.FromRgb(0x18, 0x0b, 0x0f), ((SolidColorBrush)panel.Background).Color, "telemetry dark red canvas");
+        Equal(Color.FromRgb(0x0f, 0x0f, 0x0f), ((SolidColorBrush)panel.Background).Color, "telemetry dark gray canvas");
         var root = (Grid)panel.Content;
         Equal(4, root.RowDefinitions.Count, "telemetry dashboard row count");
         Equal(900d, panel.MinWidth, "telemetry dashboard minimum width");
@@ -311,16 +311,13 @@ internal static class Program
         for (var index = 0; index < summary.Children.Count; index++)
             Equal(index, Grid.GetColumn(summary.Children[index]), "telemetry summary card column");
         var content = (Grid)root.Children[3];
-        Equal(2, content.RowDefinitions.Count, "telemetry content row count");
-        Equal(2, content.Children.Count, "telemetry table and details panel");
+        Equal(1, content.RowDefinitions.Count, "telemetry content row count");
+        Equal(1, content.Children.Count, "telemetry table only");
         var table = (Border)content.Children[0];
         Equal(2, ((Grid)table.Child).RowDefinitions.Count, "telemetry table structure");
         var toolbar = (Grid)root.Children[1];
         var filters = (StackPanel)((StackPanel)toolbar.Children[1]).Children[0];
         Equal(3, filters.Children.OfType<Button>().Count(), "telemetry range filter count");
-        var details = (Border)content.Children[1];
-        var detailsRoot = (Grid)details.Child;
-        Equal(3, ((StackPanel)detailsRoot.Children[1]).Children.OfType<Button>().Count(), "telemetry detail tab count");
     }
 
     private static void TestWidgetMetricVisibility()

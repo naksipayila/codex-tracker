@@ -14,16 +14,16 @@ namespace CodexUsageTray;
 
 internal sealed class TelemetryPanel : UserControl, IDisposable
 {
-    private static readonly Color CanvasColor = Color.FromRgb(0x18, 0x0b, 0x0f);
-    private static readonly Color SurfaceColor = Color.FromRgb(0x24, 0x11, 0x16);
-    private static readonly Color RaisedColor = Color.FromRgb(0x32, 0x18, 0x21);
-    private static readonly Color HeaderColor = Color.FromRgb(0x3a, 0x1b, 0x24);
-    private static readonly Color BorderColor = Color.FromRgb(0x63, 0x31, 0x3d);
-    private static readonly Color MutedColor = Color.FromRgb(0xc3, 0x9c, 0xa5);
-    private static readonly Color DimColor = Color.FromRgb(0x8f, 0x66, 0x70);
-    private static readonly Color TextColor = Color.FromRgb(0xff, 0xf1, 0xf3);
-    private static readonly Color AccentColor = Color.FromRgb(0xd0, 0x64, 0x78);
-    private static readonly Color BlueColor = Color.FromRgb(0xb9, 0x79, 0x85);
+    private static readonly Color CanvasColor = Color.FromRgb(0x0f, 0x0f, 0x0f);
+    private static readonly Color SurfaceColor = Color.FromRgb(0x16, 0x16, 0x16);
+    private static readonly Color RaisedColor = Color.FromRgb(0x23, 0x23, 0x23);
+    private static readonly Color HeaderColor = Color.FromRgb(0x2a, 0x2a, 0x2a);
+    private static readonly Color BorderColor = Color.FromRgb(0x3d, 0x3d, 0x3d);
+    private static readonly Color MutedColor = Color.FromRgb(0xa0, 0xa0, 0xa0);
+    private static readonly Color DimColor = Color.FromRgb(0x70, 0x70, 0x70);
+    private static readonly Color TextColor = Color.FromRgb(0xe0, 0xe0, 0xe0);
+    private static readonly Color AccentColor = Color.FromRgb(0x80, 0x80, 0x80);
+    private static readonly Color BlueColor = Color.FromRgb(0x98, 0x98, 0x98);
     private static readonly Color GreenColor = Color.FromRgb(0x48, 0xd4, 0x9b);
     private static readonly Color RedColor = Color.FromRgb(0xff, 0x7b, 0x86);
     private static readonly Color AmberColor = Color.FromRgb(0xf1, 0xb8, 0x5b);
@@ -46,15 +46,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
     private readonly Border latencyAccent;
     private readonly Grid contentArea;
     private readonly Border table;
-    private readonly Border detailsPanel;
-    private Border detailAvatar;
-    private TextBlock detailName;
-    private TextBlock detailMeta;
-    private StackPanel detailBody;
-    private readonly Dictionary<string, Button> detailTabs = new();
     private IReadOnlyList<TelemetryPerson> currentUsers = Array.Empty<TelemetryPerson>();
-    private TelemetryPerson selectedUser;
-    private string selectedDetailTab = "Models";
     private bool passiveExpanded;
     private int selectedRangeDays = 7;
     private bool loading;
@@ -220,24 +212,16 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         tableRoot.Children.Add(scroll);
         table.Child = tableRoot;
 
-        detailsPanel = CreateDetailsPanel();
         contentArea = new Grid();
         contentArea.ColumnDefinitions.Add(new ColumnDefinition());
-        contentArea.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(332) });
         contentArea.RowDefinitions.Add(new RowDefinition());
-        contentArea.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         contentArea.Children.Add(table);
-        contentArea.Children.Add(detailsPanel);
-        Grid.SetColumn(detailsPanel, 1);
-        contentArea.SizeChanged += (_, _) => ApplyResponsiveLayout();
         Grid.SetRow(contentArea, 3);
         root.Children.Add(contentArea);
         Content = root;
-        UpdateDetailsPanel();
 
         Loaded += (_, _) =>
         {
-            ApplyResponsiveLayout();
             _ = RefreshAsync();
             _ = RefreshLoopAsync();
         };
@@ -286,8 +270,6 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
     {
         var ordered = users.OrderByDescending(user => user.TotalTokens).ToArray();
         currentUsers = ordered;
-        if (selectedUser != null)
-            selectedUser = ordered.FirstOrDefault(user => user.UserId == selectedUser.UserId);
         var totalTokens = ordered.Sum(user => user.TotalTokens);
         var totalRequests = ordered.Sum(user => user.Requests);
         var totalErrors = ordered.Sum(user => user.Errors);
@@ -307,7 +289,6 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         latencyAccent.Background = new SolidColorBrush(highLatency ? AmberColor : DimColor);
 
         RenderRows();
-        UpdateDetailsPanel();
     }
 
     private void RenderRows()
@@ -343,7 +324,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             Height = 36,
             Padding = new Thickness(16, 0, 16, 0),
             Foreground = new SolidColorBrush(MutedColor),
-            Background = new SolidColorBrush(Color.FromRgb(0x2b, 0x14, 0x1b)),
+            Background = new SolidColorBrush(Color.FromRgb(0x1e, 0x1e, 0x1e)),
             BorderBrush = new SolidColorBrush(BorderColor),
             BorderThickness = new Thickness(0, 1, 0, 0),
             FontSize = 10,
@@ -412,14 +393,12 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
 
     private Border CreatePersonRow(TelemetryPerson user, int index)
     {
-        var baseColor = index % 2 == 0 ? SurfaceColor : Color.FromRgb(0x2a, 0x14, 0x1b);
-        var selected = selectedUser?.UserId == user.UserId;
+        var baseColor = index % 2 == 0 ? SurfaceColor : Color.FromRgb(0x1a, 0x1a, 0x1a);
         var row = new Grid
         {
             MinWidth = ColumnWidths.Sum(),
             MinHeight = 52,
-            Background = new SolidColorBrush(selected ? Color.FromRgb(0x5a, 0x23, 0x35) : baseColor),
-            Cursor = Cursors.Hand,
+            Background = new SolidColorBrush(baseColor),
         };
         AddColumns(row);
 
@@ -458,8 +437,8 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         if (!string.IsNullOrWhiteSpace(user.Role))
             nameLine.Children.Add(new Border
             {
-                Background = new SolidColorBrush(Color.FromRgb(0x42, 0x20, 0x2b)),
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0x75, 0x3c, 0x4b)),
+                Background = new SolidColorBrush(Color.FromRgb(0x32, 0x32, 0x32)),
+                BorderBrush = new SolidColorBrush(Color.FromRgb(0x54, 0x54, 0x54)),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(4),
                 Margin = new Thickness(7, 0, 0, 0),
@@ -495,420 +474,13 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         AddCell(row, user.LastActive == "now" ? "Active now" : user.LastActive, 9, false,
             user.Online ? GreenColor : MutedColor, TextAlignment.Left);
 
-        var selectedAccent = new Border
-        {
-            Width = 3,
-            Background = new SolidColorBrush(AccentColor),
-            HorizontalAlignment = HorizontalAlignment.Left,
-            Visibility = selected ? Visibility.Visible : Visibility.Collapsed,
-        };
-        row.Children.Add(selectedAccent);
-        row.MouseEnter += (_, _) =>
-        {
-            if (selectedUser?.UserId != user.UserId)
-                row.Background = new SolidColorBrush(Color.FromRgb(0x45, 0x1d, 0x2a));
-        };
-        row.MouseLeave += (_, _) =>
-        {
-            if (selectedUser?.UserId != user.UserId)
-                row.Background = new SolidColorBrush(baseColor);
-        };
-        row.MouseLeftButtonUp += (_, eventArgs) =>
-        {
-            SelectPerson(user);
-            eventArgs.Handled = true;
-        };
+        row.MouseEnter += (_, _) => row.Background = new SolidColorBrush(Color.FromRgb(0x34, 0x34, 0x34));
+        row.MouseLeave += (_, _) => row.Background = new SolidColorBrush(baseColor);
         return new Border
         {
             BorderBrush = new SolidColorBrush(BorderColor),
             BorderThickness = new Thickness(0, 0, 0, 1),
             Child = row,
-        };
-    }
-
-    private void SelectPerson(TelemetryPerson user)
-    {
-        selectedUser = user;
-        RenderRows();
-        UpdateDetailsPanel();
-    }
-
-    private Border CreateDetailsPanel()
-    {
-        var shell = new Border
-        {
-            Background = new SolidColorBrush(SurfaceColor),
-            BorderBrush = new SolidColorBrush(BorderColor),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(10),
-            Padding = new Thickness(18),
-        };
-        var panel = new Grid();
-        panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        panel.RowDefinitions.Add(new RowDefinition());
-
-        var header = new Grid { Margin = new Thickness(0, 0, 0, 14) };
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(46) });
-        header.ColumnDefinitions.Add(new ColumnDefinition());
-        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        detailAvatar = new Border
-        {
-            Width = 40,
-            Height = 40,
-            CornerRadius = new CornerRadius(20),
-            Background = new SolidColorBrush(Color.FromRgb(0x8f, 0x2e, 0x45)),
-            VerticalAlignment = VerticalAlignment.Center,
-            Child = new TextBlock
-            {
-                Text = "?",
-                Foreground = Brushes.White,
-                FontSize = 13,
-                FontWeight = FontWeights.Bold,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextAlignment = TextAlignment.Center,
-            },
-        };
-        header.Children.Add(detailAvatar);
-        var identity = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
-        detailName = new TextBlock
-        {
-            Text = "Select a person",
-            Foreground = new SolidColorBrush(TextColor),
-            FontSize = 16,
-            FontWeight = FontWeights.SemiBold,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-        };
-        detailMeta = new TextBlock
-        {
-            Text = "Click a row to inspect usage",
-            Foreground = new SolidColorBrush(MutedColor),
-            FontSize = 10,
-            Margin = new Thickness(0, 4, 0, 0),
-            TextTrimming = TextTrimming.CharacterEllipsis,
-        };
-        identity.Children.Add(detailName);
-        identity.Children.Add(detailMeta);
-        Grid.SetColumn(identity, 1);
-        header.Children.Add(identity);
-        var clear = CreatePillButton("Clear", Color.FromRgb(0x32, 0x18, 0x21), MutedColor, 52);
-        clear.Click += (_, _) =>
-        {
-            selectedUser = null;
-            RenderRows();
-            UpdateDetailsPanel();
-        };
-        Grid.SetColumn(clear, 2);
-        header.Children.Add(clear);
-        panel.Children.Add(header);
-
-        var tabs = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 12) };
-        foreach (var tab in new[] { "Overview", "Models", "Activity" })
-        {
-            var button = CreateTabButton(tab);
-            button.Click += (_, _) =>
-            {
-                selectedDetailTab = tab;
-                UpdateDetailsPanel();
-            };
-            detailTabs[tab] = button;
-            tabs.Children.Add(button);
-        }
-        Grid.SetRow(tabs, 1);
-        panel.Children.Add(tabs);
-
-        detailBody = new StackPanel();
-        var detailScroll = new ScrollViewer
-        {
-            Content = detailBody,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-            Padding = new Thickness(0, 0, 2, 0),
-        };
-        ConfigureScrollViewer(detailScroll);
-        Grid.SetRow(detailScroll, 2);
-        panel.Children.Add(detailScroll);
-        shell.Child = panel;
-        return shell;
-    }
-
-    private void UpdateDetailsPanel()
-    {
-        var hasSelection = selectedUser != null;
-        detailAvatar.Visibility = hasSelection ? Visibility.Visible : Visibility.Collapsed;
-        if (!hasSelection)
-        {
-            detailName.Text = "Select a person";
-            detailMeta.Text = "Click a row to inspect usage";
-            detailBody.Children.Clear();
-            detailBody.Children.Add(new TextBlock
-            {
-                Text = "Member insights will appear here with model usage, effort mix and activity status.",
-                Foreground = new SolidColorBrush(MutedColor),
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 10, 0, 0),
-            });
-        }
-        else
-        {
-            var user = selectedUser;
-            ((TextBlock)detailAvatar.Child).Text = GetInitials(user.Name);
-            detailAvatar.Background = new SolidColorBrush(GetAvatarColor(user.Name));
-            detailName.Text = user.Name;
-            detailMeta.Text = string.IsNullOrWhiteSpace(user.Role)
-                ? (user.Online ? "Online" : FormatPresence(user.LastActive))
-                : $"{user.Role.ToUpperInvariant()}  ·  {(user.Online ? "Online" : FormatPresence(user.LastActive))}";
-            detailBody.Children.Clear();
-            detailBody.Children.Add(selectedDetailTab switch
-            {
-                "Models" => CreateModelsBody(user),
-                "Activity" => CreateActivityBody(user),
-                _ => CreateOverviewBody(user),
-            });
-        }
-
-        foreach (var pair in detailTabs)
-        {
-            var selected = pair.Key == selectedDetailTab;
-            pair.Value.Background = new SolidColorBrush(selected ? Color.FromRgb(0x8f, 0x2e, 0x45) : Color.FromRgb(0x32, 0x18, 0x21));
-            pair.Value.Foreground = new SolidColorBrush(selected ? TextColor : MutedColor);
-        }
-    }
-
-    private static StackPanel CreateOverviewBody(TelemetryPerson user)
-    {
-        var body = new StackPanel();
-        body.Children.Add(CreateDetailSectionLabel("Usage snapshot"));
-        var stats = new Grid { Margin = new Thickness(0, 0, 0, 16) };
-        stats.ColumnDefinitions.Add(new ColumnDefinition());
-        stats.ColumnDefinitions.Add(new ColumnDefinition());
-        stats.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        stats.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        AddDetailStat(stats, 0, 0, "REQUESTS", user.Requests.ToString("N0", CultureInfo.InvariantCulture));
-        AddDetailStat(stats, 1, 0, "TOTAL TOKENS", FormatTokens(user.TotalTokens));
-        AddDetailStat(stats, 0, 1, "AVG LATENCY", user.AverageLatencyMs > 0 ? FormatLatency(user.AverageLatencyMs) : "--");
-        AddDetailStat(stats, 1, 1, "ERRORS", user.Errors.ToString("N0", CultureInfo.InvariantCulture), user.Errors > 0 ? RedColor : TextColor);
-        body.Children.Add(stats);
-        body.Children.Add(CreateDetailSectionLabel("Token composition"));
-        body.Children.Add(CreateDetailLine("Input", FormatTokens(Math.Max(0, user.InputTokens - user.CachedTokens))));
-        body.Children.Add(CreateDetailLine("Output", FormatTokens(user.OutputTokens)));
-        body.Children.Add(CreateDetailLine("Reasoning", FormatTokens(user.ReasoningTokens)));
-        body.Children.Add(CreateDetailLine("Cached", FormatTokens(user.CachedTokens)));
-        return body;
-    }
-
-    private static StackPanel CreateModelsBody(TelemetryPerson user)
-    {
-        var body = new StackPanel();
-        body.Children.Add(CreateDetailSectionLabel("Model mix"));
-        var maxTokens = user.Breakdown.Count == 0 ? 0 : user.Breakdown.Max(item => item.TotalTokens);
-        if (user.Breakdown.Count == 0)
-        {
-            body.Children.Add(new TextBlock
-            {
-                Text = "No model breakdown is available for this member.",
-                Foreground = new SolidColorBrush(MutedColor),
-                FontSize = 11,
-                TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 4, 0, 0),
-            });
-            return body;
-        }
-        foreach (var item in user.Breakdown)
-            body.Children.Add(CreateModelCard(item, maxTokens));
-        return body;
-    }
-
-    private static StackPanel CreateActivityBody(TelemetryPerson user)
-    {
-        var body = new StackPanel();
-        body.Children.Add(CreateDetailSectionLabel("Activity status"));
-        body.Children.Add(CreateDetailLine("Current status", user.Online ? "Online" : "Offline", user.Online ? GreenColor : MutedColor));
-        body.Children.Add(CreateDetailLine("Last active", user.LastActive == "now" ? "Active now" : user.LastActive));
-        body.Children.Add(CreateDetailLine("Models used", user.Models.ToString("N0", CultureInfo.InvariantCulture)));
-        body.Children.Add(new Border
-        {
-            Background = new SolidColorBrush(Color.FromRgb(0x2b, 0x14, 0x1b)),
-            CornerRadius = new CornerRadius(7),
-            Padding = new Thickness(10),
-            Margin = new Thickness(0, 14, 0, 0),
-            Child = new TextBlock
-            {
-                Text = "The activity view reflects the latest telemetry snapshot. Historical event details are not included in this response.",
-                Foreground = new SolidColorBrush(MutedColor),
-                FontSize = 10,
-                TextWrapping = TextWrapping.Wrap,
-            },
-        });
-        return body;
-    }
-
-    private static Border CreateModelCard(TelemetryBreakdown item, long maxTokens)
-    {
-        var card = new Border
-        {
-            Background = new SolidColorBrush(Color.FromRgb(0x2b, 0x14, 0x1b)),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(0x75, 0x3c, 0x4b)),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(8),
-            Padding = new Thickness(11, 10, 11, 9),
-            Margin = new Thickness(0, 0, 0, 8),
-        };
-        var body = new StackPanel();
-        var top = new Grid();
-        top.ColumnDefinitions.Add(new ColumnDefinition());
-        top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        top.Children.Add(new TextBlock
-        {
-            Text = item.Model,
-            Foreground = new SolidColorBrush(TextColor),
-            FontSize = 11,
-            FontWeight = FontWeights.SemiBold,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-        });
-        var total = new TextBlock
-        {
-            Text = FormatTokens(item.TotalTokens),
-            Foreground = new SolidColorBrush(AccentColor),
-            FontSize = 11,
-            FontWeight = FontWeights.Bold,
-        };
-        Grid.SetColumn(total, 1);
-        top.Children.Add(total);
-        body.Children.Add(top);
-
-        var ratio = maxTokens <= 0 ? 0 : Math.Clamp((double)item.TotalTokens / maxTokens, 0, 1);
-        var bar = new Grid { Height = 5, Margin = new Thickness(0, 9, 0, 9) };
-        bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(ratio, 0.02), GridUnitType.Star) });
-        bar.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(Math.Max(1 - ratio, 0), GridUnitType.Star) });
-        bar.Children.Add(new Border { Background = new SolidColorBrush(AccentColor), CornerRadius = new CornerRadius(3) });
-        var remainder = new Border { Background = new SolidColorBrush(Color.FromRgb(0x4a, 0x24, 0x2e)), CornerRadius = new CornerRadius(3) };
-        Grid.SetColumn(remainder, 1);
-        bar.Children.Add(remainder);
-        body.Children.Add(bar);
-        var info = new WrapPanel { Orientation = Orientation.Horizontal };
-        info.Children.Add(new TextBlock
-        {
-            Text = $"{item.Requests:N0} requests",
-            Foreground = new SolidColorBrush(MutedColor),
-            FontSize = 10,
-            Margin = new Thickness(0, 2, 6, 0),
-        });
-        foreach (var effort in ParseEfforts(item.Efforts))
-            info.Children.Add(CreateEffortChip(effort));
-        body.Children.Add(info);
-        card.Child = body;
-        return card;
-    }
-
-    private static IEnumerable<(string Level, string Count)> ParseEfforts(string efforts)
-    {
-        foreach (var item in (efforts ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var parts = item.Split(':', 2, StringSplitOptions.TrimEntries);
-            if (parts.Length == 2) yield return (parts[0], parts[1]);
-        }
-    }
-
-    private static Border CreateEffortChip((string Level, string Count) effort)
-    {
-        var color = GetEffortColor(effort.Level);
-        return new Border
-        {
-            Background = new SolidColorBrush(Color.FromArgb(35, color.R, color.G, color.B)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(85, color.R, color.G, color.B)),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(5),
-            Padding = new Thickness(5, 2, 5, 2),
-            Margin = new Thickness(6, -3, 0, 0),
-            Child = new TextBlock
-            {
-                Text = $"{effort.Level.ToUpperInvariant()} {effort.Count}",
-                Foreground = new SolidColorBrush(color),
-                FontSize = 8,
-                FontWeight = FontWeights.SemiBold,
-            },
-        };
-    }
-
-    private static Color GetEffortColor(string level) =>
-        level?.ToLowerInvariant() switch
-        {
-            "xhigh" => RedColor,
-            "high" => AmberColor,
-            "medium" => BlueColor,
-            _ => MutedColor,
-        };
-
-    private static TextBlock CreateDetailSectionLabel(string text) => new()
-    {
-        Text = text.ToUpperInvariant(),
-        Foreground = new SolidColorBrush(DimColor),
-        FontSize = 9,
-        FontWeight = FontWeights.SemiBold,
-        Margin = new Thickness(0, 0, 0, 8),
-    };
-
-    private static void AddDetailStat(Grid grid, int column, int row, string label, string value, Color? color = null)
-    {
-        var card = new Border
-        {
-            Background = new SolidColorBrush(Color.FromRgb(0x2b, 0x14, 0x1b)),
-            CornerRadius = new CornerRadius(6),
-            Padding = new Thickness(9, 8, 9, 8),
-            Margin = new Thickness(column == 0 ? 0 : 4, row == 0 ? 0 : 4, column == 1 ? 0 : 4, row == 1 ? 0 : 4),
-        };
-        var copy = new StackPanel();
-        copy.Children.Add(new TextBlock
-        {
-            Text = label,
-            Foreground = new SolidColorBrush(DimColor),
-            FontSize = 8,
-            FontWeight = FontWeights.SemiBold,
-        });
-        copy.Children.Add(new TextBlock
-        {
-            Text = value,
-            Foreground = new SolidColorBrush(color ?? TextColor),
-            FontSize = 15,
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 3, 0, 0),
-        });
-        card.Child = copy;
-        Grid.SetColumn(card, column);
-        Grid.SetRow(card, row);
-        grid.Children.Add(card);
-    }
-
-    private static Border CreateDetailLine(string label, string value, Color? color = null)
-    {
-        var line = new Grid { MinHeight = 28 };
-        line.ColumnDefinitions.Add(new ColumnDefinition());
-        line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        line.Children.Add(new TextBlock
-        {
-            Text = label,
-            Foreground = new SolidColorBrush(MutedColor),
-            FontSize = 10,
-            VerticalAlignment = VerticalAlignment.Center,
-        });
-        var valueText = new TextBlock
-        {
-            Text = value,
-            Foreground = new SolidColorBrush(color ?? TextColor),
-            FontSize = 10,
-            FontWeight = FontWeights.SemiBold,
-            VerticalAlignment = VerticalAlignment.Center,
-        };
-        Grid.SetColumn(valueText, 1);
-        line.Children.Add(valueText);
-        return new Border
-        {
-            BorderBrush = new SolidColorBrush(Color.FromRgb(0x4a, 0x24, 0x2e)),
-            BorderThickness = new Thickness(0, 0, 0, 1),
-            Child = line,
         };
     }
 
@@ -940,21 +512,6 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(width) });
     }
 
-    private void ApplyResponsiveLayout()
-    {
-        if (contentArea == null) return;
-        var sidePanel = ActualWidth >= 1120;
-        contentArea.ColumnDefinitions[1].Width = sidePanel ? new GridLength(332) : new GridLength(0);
-        contentArea.RowDefinitions[1].Height = sidePanel ? new GridLength(0) : GridLength.Auto;
-        Grid.SetColumn(table, 0);
-        Grid.SetRow(table, 0);
-        Grid.SetColumnSpan(table, sidePanel ? 1 : 2);
-        Grid.SetColumn(detailsPanel, sidePanel ? 1 : 0);
-        Grid.SetRow(detailsPanel, sidePanel ? 0 : 1);
-        Grid.SetColumnSpan(detailsPanel, sidePanel ? 1 : 2);
-        detailsPanel.Margin = sidePanel ? new Thickness(14, 0, 0, 0) : new Thickness(0, 14, 0, 0);
-    }
-
     private static void ConfigureScrollViewer(ScrollViewer scroll)
     {
         var thumbTemplate = new ControlTemplate(typeof(Thumb));
@@ -963,7 +520,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         thumbBorder.SetValue(Border.CornerRadiusProperty, new CornerRadius(4));
         thumbTemplate.VisualTree = thumbBorder;
         var thumbStyle = new Style(typeof(Thumb));
-        thumbStyle.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(0x7b, 0x35, 0x49))));
+        thumbStyle.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(0x45, 0x45, 0x45))));
         thumbStyle.Setters.Add(new Setter(FrameworkElement.MinHeightProperty, 28d));
         thumbStyle.Setters.Add(new Setter(Control.TemplateProperty, thumbTemplate));
         var thumbHover = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
@@ -978,7 +535,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         scrollTemplate.VisualTree = track;
         var scrollStyle = new Style(typeof(ScrollBar));
         scrollStyle.Setters.Add(new Setter(FrameworkElement.WidthProperty, 10d));
-        scrollStyle.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(0x20, 0x0e, 0x13))));
+        scrollStyle.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(0x0f, 0x0f, 0x0f))));
         scrollStyle.Setters.Add(new Setter(Control.TemplateProperty, scrollTemplate));
         scroll.Resources.Add(typeof(Thumb), thumbStyle);
         scroll.Resources.Add(typeof(ScrollBar), scrollStyle);
@@ -986,14 +543,11 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
 
     private static Button CreateFilterButton(string text, bool selected)
     {
-        var button = CreatePillButton(text, selected ? Color.FromRgb(0x8f, 0x2e, 0x45) : SurfaceColor,
+        var button = CreatePillButton(text, selected ? Color.FromRgb(0x56, 0x56, 0x56) : SurfaceColor,
             selected ? TextColor : MutedColor, 48);
         button.Margin = new Thickness(0, 0, 1, 0);
         return button;
     }
-
-    private static Button CreateTabButton(string text) =>
-        CreatePillButton(text, Color.FromRgb(0x32, 0x18, 0x21), MutedColor, 74);
 
     private static Button CreatePillButton(string text, Color background, Color foreground, double width)
     {
@@ -1005,7 +559,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             Padding = new Thickness(7, 3, 7, 3),
             Background = new SolidColorBrush(background),
             Foreground = new SolidColorBrush(foreground),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(0x2d, 0x4a, 0x64)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(0x38, 0x38, 0x38)),
             BorderThickness = new Thickness(1),
             FontSize = 10,
             FontWeight = FontWeights.SemiBold,
@@ -1044,7 +598,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
                 selectedRangeDays = option.Item2;
                 foreach (var filter in rangeFilters.Children.OfType<Button>())
                     filter.Background = new SolidColorBrush((int)filter.Tag == selectedRangeDays
-                        ? Color.FromRgb(0x8f, 0x2e, 0x45) : SurfaceColor);
+                        ? Color.FromRgb(0x56, 0x56, 0x56) : SurfaceColor);
                 _ = RefreshAsync();
             };
             button.Tag = option.Item2;
@@ -1113,9 +667,9 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             MinWidth = 84,
             Height = 34,
             Padding = new Thickness(12, 4, 12, 4),
-            Background = new SolidColorBrush(Color.FromRgb(0x8f, 0x2e, 0x45)),
+            Background = new SolidColorBrush(Color.FromRgb(0x56, 0x56, 0x56)),
             Foreground = Brushes.White,
-            BorderBrush = new SolidColorBrush(Color.FromRgb(0xd0, 0x64, 0x78)),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(0x80, 0x80, 0x80)),
             BorderThickness = new Thickness(1),
             FontSize = 11,
             FontWeight = FontWeights.SemiBold,
@@ -1139,10 +693,10 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         style.Setters.Add(new Setter(Control.BackgroundProperty, button.Background));
         style.Setters.Add(new Setter(Control.BorderBrushProperty, button.BorderBrush));
         var hover = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
-        hover.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(0xb4, 0x4c, 0x63))));
+        hover.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(0x70, 0x70, 0x70))));
         style.Triggers.Add(hover);
         var pressed = new Trigger { Property = ButtonBase.IsPressedProperty, Value = true };
-        pressed.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(0x61, 0x1e, 0x2e))));
+        pressed.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(Color.FromRgb(0x3d, 0x3d, 0x3d))));
         style.Triggers.Add(pressed);
         button.Style = style;
         button.Click += async (_, _) => await action();
@@ -1173,7 +727,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
 
     private static Color GetAvatarColor(string name)
     {
-        var colors = new[] { BlueColor, AccentColor, Color.FromRgb(0x9d, 0x5d, 0x72), Color.FromRgb(0xc2, 0x6a, 0x66) };
+        var colors = new[] { BlueColor, AccentColor, Color.FromRgb(0x60, 0x60, 0x60), Color.FromRgb(0x80, 0x80, 0x80) };
         var hash = 17;
         foreach (var character in name ?? "") hash = unchecked(hash * 31 + character);
         return colors[(hash & int.MaxValue) % colors.Length];
@@ -1206,7 +760,7 @@ internal sealed class TelemetryScrollBarTrack : Track
     {
         Thumb = new Thumb
         {
-            Background = new SolidColorBrush(Color.FromRgb(0x7b, 0x35, 0x49)),
+            Background = new SolidColorBrush(Color.FromRgb(0x45, 0x45, 0x45)),
             MinHeight = 28,
         };
     }
