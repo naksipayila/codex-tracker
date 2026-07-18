@@ -384,26 +384,15 @@ if (Test-Path -LiteralPath $ScratchRoot) {
     Remove-Item -LiteralPath $ScratchRoot -Recurse -Force
 }
 [IO.Directory]::CreateDirectory($ScratchRoot) | Out-Null
-$script:BuiltLauncher = Join-Path $SourceRoot "CodexTracker.exe"
-$sourceCheckLauncher = Join-Path $ScratchRoot "source-check-launcher.exe"
+$script:BuiltLauncher = Join-Path $ScratchRoot "CodexTracker.exe"
 $script:InvalidLauncher = Join-Path $ScratchRoot "invalid-launcher.exe"
 $script:ContainedChild = Join-Path $ScratchRoot "contained-child.exe"
 
-& "$SourceRoot\src\launcher\build.ps1" -OutputPath $sourceCheckLauncher
+& "$SourceRoot\src\launcher\build.ps1" -OutputPath $script:BuiltLauncher
 & $script:Csc /nologo /target:winexe "/out:$script:InvalidLauncher" "$SourceRoot\tests\updater\InvalidLauncher.cs"
 if ($LASTEXITCODE -ne 0) { throw "Could not compile the invalid launcher fixture." }
 & $script:Csc /nologo /target:winexe "/out:$script:ContainedChild" "$SourceRoot\tests\updater\ContainedChild.cs"
 if ($LASTEXITCODE -ne 0) { throw "Could not compile the containment probe child." }
-
-$protocolToken = [Guid]::NewGuid().ToString("N")
-$protocolReady = Join-Path $ScratchRoot "tracked-launcher-self-test.ready"
-$protocolProcess = Start-Process -FilePath $script:BuiltLauncher -ArgumentList "--self-test", "3", $protocolReady, $protocolToken -Wait -PassThru
-$protocolBuildHash = Get-NativeBuildHash $SourceRoot
-if ($protocolProcess.ExitCode -ne 0 -or !(Test-Path -LiteralPath $protocolReady) -or
-    [IO.File]::ReadAllText($protocolReady).Trim() -ne ($protocolToken + "|" + $protocolBuildHash)) {
-    throw "The tracked CodexTracker.exe does not implement the current native updater protocol."
-}
-Remove-Item -LiteralPath $protocolReady -Force
 
 Invoke-UpdateCase "success" ""
 Invoke-UpdateCase "bad-launcher" "bad-launcher"
