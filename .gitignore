@@ -15,3 +15,8 @@ dist/
 build/
 coverage/
 *.log
+
+# .NET build output
+[Bb]in/
+[Oo]bj/
+
