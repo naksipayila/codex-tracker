@@ -664,7 +664,7 @@ internal sealed class UpdateDownloadWindow : Window
             Background = Theme.SurfaceBrush,
             BorderBrush = Theme.BorderBrush,
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(14),
+            CornerRadius = Theme.RadiusXLarge,
             Padding = new Thickness(24),
             Effect = Theme.PanelShadow(),
             Child = layout,

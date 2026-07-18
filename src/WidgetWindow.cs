@@ -11,6 +11,13 @@ namespace CodexUsageTray;
 internal sealed class WidgetWindow : Window
 {
     public const double PreferredWidth = 270;
+    private static readonly System.Windows.Media.Effects.DropShadowEffect WidgetTextOutline = new()
+    {
+        BlurRadius = 2,
+        ShadowDepth = 0,
+        Opacity = 1.0,
+        Color = Colors.Black,
+    };
 
     private readonly TextBlock fiveHourValue;
     private readonly TextBlock fiveHourReset;
@@ -180,10 +187,10 @@ internal sealed class WidgetWindow : Window
             Foreground = Theme.TextMutedBrush,
             FontFamily = Theme.FontFamilyValue,
             FontSize = Theme.FontSizeBody,
-            FontWeight = FontWeights.SemiBold,
+            FontWeight = Theme.FontWeightBold,
             TextAlignment = TextAlignment.Right,
             VerticalAlignment = VerticalAlignment.Center,
-            Effect = Theme.WidgetShadow,
+            Effect = WidgetTextOutline,
         };
     }
 
@@ -226,11 +233,11 @@ internal sealed class WidgetWindow : Window
             Foreground = new SolidColorBrush(color),
             FontFamily = Theme.FontFamilyValue,
             FontSize = Theme.FontSizeBody,
-            FontWeight = FontWeights.SemiBold,
+            FontWeight = Theme.FontWeightBold,
             TextAlignment = alignment,
             VerticalAlignment = VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis,
-            Effect = Theme.WidgetShadow,
+            Effect = WidgetTextOutline,
         };
     }
 

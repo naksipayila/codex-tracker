@@ -177,7 +177,7 @@ internal static class Program
         var body = (StackPanel)((Border)panel.Content).Child;
         Equal(392d, panel.Width, "settings panel width");
         var root = (Border)panel.Content;
-        Equal(14d, root.CornerRadius.TopLeft, "settings panel corner radius");
+        Equal(12d, root.CornerRadius.TopLeft, "settings panel corner radius");
         Equal(Color.FromRgb(0x14, 0x14, 0x14), ((SolidColorBrush)root.Background).Color, "settings panel dark gray background");
         Equal("QUICK ACTIONS", ((TextBlock)body.Children[0]).Text, "settings first section label");
         Equal("QUICK ACTIONS|PREFERENCES",
@@ -302,24 +302,35 @@ internal static class Program
         using var panel = new TelemetryPanel(new LatrixApiClient(), "");
         Equal(Color.FromRgb(0x0d, 0x0d, 0x0d), ((SolidColorBrush)panel.Background).Color, "telemetry dark gray canvas");
         var root = (Grid)panel.Content;
-        Equal(4, root.RowDefinitions.Count, "telemetry dashboard row count");
+        Equal(2, root.RowDefinitions.Count, "telemetry dashboard row count");
         Equal(900d, panel.MinWidth, "telemetry dashboard minimum width");
-        var heading = (Grid)root.Children[0];
-        var headingCopy = (StackPanel)heading.Children[0];
-        Equal("Team activity", ((TextBlock)headingCopy.Children[1]).Text, "telemetry dashboard title");
-        var summary = (Grid)root.Children[2];
-        Equal(5, summary.ColumnDefinitions.Count, "telemetry summary card count");
+        var summary = (Grid)root.Children[0];
+        Equal(5, summary.ColumnDefinitions.Count, "telemetry summary column count");
+        Equal(1, summary.RowDefinitions.Count, "telemetry summary row count");
         Equal(5, summary.Children.Count, "telemetry summary card children");
-        for (var index = 0; index < summary.Children.Count; index++)
-            Equal(index, Grid.GetColumn(summary.Children[index]), "telemetry summary card column");
-        var content = (Grid)root.Children[3];
-        Equal(1, content.RowDefinitions.Count, "telemetry content row count");
-        Equal(1, content.Children.Count, "telemetry table only");
-        var table = (Border)content.Children[0];
+        Equal(0, Grid.GetColumn(summary.Children[0]), "total tokens summary column");
+        Equal(1, Grid.GetColumn(summary.Children[1]), "requests summary column");
+        Equal(2, Grid.GetColumn(summary.Children[2]), "active summary column");
+        Equal(3, Grid.GetColumn(summary.Children[3]), "errors summary column");
+        Equal(4, Grid.GetColumn(summary.Children[4]), "latency summary column");
+
+        var content = (Grid)root.Children[1];
+        Equal(3, content.ColumnDefinitions.Count, "telemetry content column count");
+        Equal(2, content.Children.Count, "telemetry table and online panel");
+        var leftContent = (Grid)content.Children[0];
+        Equal(2, leftContent.RowDefinitions.Count, "telemetry left content row count");
+        var usage = (Border)leftContent.Children[0];
+        var usageContent = (StackPanel)usage.Child;
+        Equal("YOUR USAGE", ((TextBlock)usageContent.Children[0]).Text, "telemetry personal usage title");
+        var table = (Border)leftContent.Children[1];
         Equal(2, ((Grid)table.Child).RowDefinitions.Count, "telemetry table structure");
-        var toolbar = (Grid)root.Children[1];
-        var filters = (StackPanel)((StackPanel)toolbar.Children[1]).Children[0];
-        Equal(3, filters.Children.OfType<Button>().Count(), "telemetry range filter count");
+        var header = (Grid)((Grid)table.Child).Children[0];
+        Equal("TEAM MEMBER", ((TextBlock)header.Children[0]).Text, "telemetry table header");
+        var online = (Border)content.Children[1];
+        Equal(2, Grid.GetRowSpan(online), "online panel row span");
+        var onlineContent = (Grid)online.Child;
+        var onlineTitle = (Grid)onlineContent.Children[0];
+        Equal("ONLINE NOW", ((TextBlock)((StackPanel)onlineTitle.Children[0]).Children[1]).Text, "online panel title");
     }
 
     private static void TestWidgetMetricVisibility()

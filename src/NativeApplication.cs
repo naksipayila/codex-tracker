@@ -642,7 +642,7 @@ internal sealed class NativeAppController : IDisposable
         application.Shutdown();
     }
 
-    public void Dispose()
+        public void Dispose()
     {
         if (!quitting)
         {
@@ -655,6 +655,7 @@ internal sealed class NativeAppController : IDisposable
             tray?.Dispose();
             tray = null;
         }
+        lifetime.Dispose();
         SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         refreshTimer?.Dispose();
@@ -726,7 +727,7 @@ internal sealed class SettingsPanelWindow : Window
                 Background = Theme.SurfaceBrush,
                 BorderBrush = Theme.BorderBrush,
                 BorderThickness = new Thickness(1),
-                CornerRadius = Theme.RadiusLarge,
+                 CornerRadius = Theme.RadiusCard,
                 Padding = new Thickness(14, 12, 14, 8),
                 Child = content,
             };
@@ -737,7 +738,7 @@ internal sealed class SettingsPanelWindow : Window
             Background = Theme.SurfaceBrush,
             BorderBrush = Theme.BorderBrush,
             BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(14),
+            CornerRadius = Theme.RadiusXLarge,
             Padding = new Thickness(18),
             Effect = Theme.PanelShadow(),
             Child = body,
@@ -812,7 +813,7 @@ internal sealed class SettingsPanelWindow : Window
         buttonBorder.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(Control.BackgroundProperty));
         buttonBorder.SetValue(Border.BorderBrushProperty, new TemplateBindingExtension(Control.BorderBrushProperty));
         buttonBorder.SetValue(Border.BorderThicknessProperty, new TemplateBindingExtension(Control.BorderThicknessProperty));
-        buttonBorder.SetValue(Border.CornerRadiusProperty, new CornerRadius(8));
+        buttonBorder.SetValue(Border.CornerRadiusProperty, Theme.RadiusLarge);
         var content = new FrameworkElementFactory(typeof(ContentPresenter));
         content.SetValue(ContentPresenter.ContentProperty, new TemplateBindingExtension(ContentControl.ContentProperty));
         content.SetValue(ContentPresenter.ContentTemplateProperty,
@@ -880,7 +881,7 @@ internal sealed class SettingsPanelWindow : Window
         row.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(Control.BackgroundProperty));
         row.SetValue(Border.BorderBrushProperty, new TemplateBindingExtension(Control.BorderBrushProperty));
         row.SetValue(Border.BorderThicknessProperty, new TemplateBindingExtension(Control.BorderThicknessProperty));
-        row.SetValue(Border.CornerRadiusProperty, new CornerRadius(8));
+        row.SetValue(Border.CornerRadiusProperty, Theme.RadiusLarge);
         row.SetValue(Border.PaddingProperty, new Thickness(10, 8, 10, 8));
 
         var content = new FrameworkElementFactory(typeof(StackPanel));

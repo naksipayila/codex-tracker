@@ -22,11 +22,6 @@ namespace CodexUsageTray
             return !string.IsNullOrWhiteSpace(ReadConfiguredPath()) || File.Exists(GetLegacyShortcutPath());
         }
 
-        public static void RehomeIfConfigured(string applicationDirectory)
-        {
-            if (HasAnyRegistration()) SetEnabled(applicationDirectory, true);
-        }
-
         public static void SetEnabled(string applicationDirectory, bool enabled)
         {
             using (var key = Registry.CurrentUser.CreateSubKey(RegistryPath, true))

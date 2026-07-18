@@ -57,6 +57,8 @@ internal static class Theme
     public static readonly CornerRadius RadiusSmall = new(4);
     public static readonly CornerRadius RadiusMedium = new(6);
     public static readonly CornerRadius RadiusLarge = new(8);
+    // Kept for the settings panel changes already present in the working tree.
+    public static readonly CornerRadius RadiusCard = new(10);
     public static readonly CornerRadius RadiusXLarge = new(12);
 
     public const double BorderThickness = 1;

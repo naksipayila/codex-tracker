@@ -1,11 +1,17 @@
-node_modules/
-bin/
-obj/
-.vs/
-*.log
-.update.lock
-.update.pending
+# Secrets and local environment files
+.env
+.env.*
+!.env.example
 
-# Runtime data is local to each Windows user.
-widget-position.json
-user-data/
+# Operating system and editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/settings.json
+
+# Common generated output
+node_modules/
+dist/
+build/
+coverage/
+*.log

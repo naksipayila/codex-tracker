@@ -1849,7 +1849,7 @@ internal static class Program
         try
         {
             var message = error.Message + "\n\nLog: " + options.LogPath;
-            var json = "{\"success\":false,\"notified\":false,\"message\":\"" +
+            var json = "{\"success\":false,\"message\":\"" +
                 EscapeJson(message) + "\"}";
             File.WriteAllText(options.ResultPath, json, new UTF8Encoding(false));
         }

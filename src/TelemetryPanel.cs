@@ -28,33 +28,31 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
     private static Color Success => Theme.Success;
     private static Color Error => Theme.Error;
     private static Color Warning => Theme.Warning;
-    private Color rowEven => BgSurface;
-    private Color rowOdd => Color.FromRgb(0x18, 0x18, 0x18);
     private static Color RowHover => Color.FromRgb(0x2e, 0x2e, 0x2e);
-    private static Color SelectedBg => Color.FromRgb(0x48, 0x48, 0x48);
     private static Color ScrollThumb => Theme.ScrollThumb;
-    private static Color ScrollHover => Accent;
 
     private readonly LatrixApiClient latrix;
     private readonly string apiKey;
     private readonly CancellationTokenSource lifetime = new();
-    private readonly StackPanel rangeFilters;
     private readonly StackPanel rows;
     private readonly StackPanel passiveRows;
-    private readonly TextBlock status;
-    private readonly Button refresh;
     private readonly TextBlock totalTokensValue;
     private readonly TextBlock requestsValue;
     private readonly TextBlock activeValue;
     private readonly TextBlock errorsValue;
     private readonly TextBlock latencyValue;
+    private readonly TextBlock yourTokensValue;
+    private readonly TextBlock yourRequestsValue;
+    private readonly TextBlock yourErrorsValue;
+    private readonly TextBlock yourLatencyValue;
+    private readonly TextBlock onlineCountValue;
+    private readonly StackPanel onlineCards;
     private readonly Border errorsAccent;
     private readonly Border latencyAccent;
-    private readonly Grid contentArea;
-    private readonly Border table;
     private IReadOnlyList<TelemetryPerson> currentUsers = Array.Empty<TelemetryPerson>();
+    private string currentUserId;
+    private string currentUserName;
     private bool passiveExpanded;
-    private int selectedRangeDays = 7;
     private bool loading;
 
     public TelemetryPanel(LatrixApiClient latrix, string apiKey)
@@ -69,128 +67,26 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
 
         var root = new Grid { Margin = new Thickness(28, 22, 28, 24) };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         root.RowDefinitions.Add(new RowDefinition());
 
-        var heading = new Grid { Margin = new Thickness(0, 0, 0, 18) };
-        heading.ColumnDefinitions.Add(new ColumnDefinition());
-        heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        heading.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var headingCopy = new StackPanel();
-        headingCopy.Children.Add(new TextBlock
-        {
-            Text = "LATRIX TELEMETRY",
-            Foreground = new SolidColorBrush(Accent),
-            FontSize = 11,
-            FontWeight = FontWeights.SemiBold,
-        });
-        headingCopy.Children.Add(new TextBlock
-        {
-            Text = "Team activity",
-            Foreground = new SolidColorBrush(TextPrimary),
-            FontSize = 28,
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 4, 0, 3),
-        });
-        headingCopy.Children.Add(new TextBlock
-        {
-            Text = "A clear view of usage, performance and model activity.",
-            Foreground = new SolidColorBrush(TextSecondary),
-            FontSize = 12,
-        });
-        heading.Children.Add(headingCopy);
-
-        status = new TextBlock
-        {
-            Text = "Ready to sync telemetry",
-            Foreground = new SolidColorBrush(TextSecondary),
-            FontSize = 11,
-            VerticalAlignment = VerticalAlignment.Center,
-            TextTrimming = TextTrimming.CharacterEllipsis,
-            Margin = new Thickness(0, 0, 18, 0),
-            MaxWidth = 360,
-        };
-        Grid.SetColumn(status, 1);
-        heading.Children.Add(status);
-
-        var liveBadge = new Border
-        {
-            Background = new SolidColorBrush(Color.FromArgb(34, Accent.R, Accent.G, Accent.B)),
-            BorderBrush = new SolidColorBrush(Color.FromArgb(90, Accent.R, Accent.G, Accent.B)),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(16),
-            Padding = new Thickness(12, 7, 12, 7),
-            VerticalAlignment = VerticalAlignment.Center,
-            Child = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Children =
-                {
-                    new Border
-                    {
-                        Width = 7,
-                        Height = 7,
-                        Background = new SolidColorBrush(Success),
-                        CornerRadius = new CornerRadius(4),
-                        Margin = new Thickness(0, 0, 7, 0),
-                    },
-                    new TextBlock
-                    {
-                        Text = "LIVE SYNC",
-                        Foreground = new SolidColorBrush(Accent),
-                        FontSize = 10,
-                        FontWeight = FontWeights.SemiBold,
-                    },
-                },
-            },
-        };
-        Grid.SetColumn(liveBadge, 2);
-        heading.Children.Add(liveBadge);
-        root.Children.Add(heading);
-
-        var toolbar = new Grid { Margin = new Thickness(0, 0, 0, 16) };
-        toolbar.ColumnDefinitions.Add(new ColumnDefinition());
-        toolbar.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        var toolbarInfo = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-        var rangeLabel = new TextBlock
-        {
-            Text = "ACTIVITY RANGE",
-            Foreground = new SolidColorBrush(TextMuted),
-            FontSize = 10,
-            FontWeight = FontWeights.SemiBold,
-            VerticalAlignment = VerticalAlignment.Center,
-            Margin = new Thickness(0, 0, 12, 0),
-        };
-        toolbarInfo.Children.Add(rangeLabel);
-        toolbar.Children.Add(toolbarInfo);
-        var rangeControls = new StackPanel { Orientation = Orientation.Horizontal };
-        rangeFilters = CreateRangeSelector();
-        rangeControls.Children.Add(rangeFilters);
-        refresh = CreateButton("Refresh", RefreshAsync);
-        rangeControls.Children.Add(refresh);
-        Grid.SetColumn(rangeControls, 1);
-        toolbar.Children.Add(rangeControls);
-        Grid.SetRow(toolbar, 1);
-        root.Children.Add(toolbar);
-
-        var summary = new Grid { Margin = new Thickness(0, 0, 0, 18) };
-        for (var i = 0; i < 5; i++)
-            summary.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-        totalTokensValue = CreateMetricValue("--");
-        requestsValue = CreateMetricValue("--");
-        activeValue = CreateMetricValue("--");
-        errorsValue = CreateMetricValue("--");
-        latencyValue = CreateMetricValue("--");
-        summary.Children.Add(CreateSummaryCard(0, "TOTAL TOKENS", totalTokensValue, "Across this period", Accent, out _));
-        summary.Children.Add(CreateSummaryCard(1, "REQUESTS", requestsValue, "All team members", Accent, out _));
-        summary.Children.Add(CreateSummaryCard(2, "ACTIVE NOW", activeValue, "Currently online", Success, out _));
-        summary.Children.Add(CreateSummaryCard(3, "ERRORS", errorsValue, "Needs attention", Error, out errorsAccent));
-        summary.Children.Add(CreateSummaryCard(4, "AVG LATENCY", latencyValue, "Across active users", Warning, out latencyAccent));
-        Grid.SetRow(summary, 2);
+        var summary = CreateSummary(out totalTokensValue, out requestsValue, out activeValue, out errorsValue,
+            out latencyValue, out errorsAccent, out latencyAccent);
+        Grid.SetRow(summary, 0);
         root.Children.Add(summary);
 
-        table = new Border
+        var contentArea = new Grid { Margin = new Thickness(0, 0, 0, 0) };
+        contentArea.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(3.55, GridUnitType.Star) });
+        contentArea.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });
+        contentArea.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        var leftContent = new Grid();
+        leftContent.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        leftContent.RowDefinitions.Add(new RowDefinition());
+
+        var usage = CreateUsageCard(out yourTokensValue, out yourRequestsValue, out yourErrorsValue, out yourLatencyValue);
+        Grid.SetRow(usage, 0);
+        leftContent.Children.Add(usage);
+
+        var table = new Border
         {
             Background = new SolidColorBrush(BgSurface),
             BorderBrush = new SolidColorBrush(BgBorder),
@@ -217,12 +113,15 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         Grid.SetRow(scroll, 1);
         tableRoot.Children.Add(scroll);
         table.Child = tableRoot;
+        Grid.SetRow(table, 1);
+        leftContent.Children.Add(table);
+        contentArea.Children.Add(leftContent);
 
-        contentArea = new Grid();
-        contentArea.ColumnDefinitions.Add(new ColumnDefinition());
-        contentArea.RowDefinitions.Add(new RowDefinition());
-        contentArea.Children.Add(table);
-        Grid.SetRow(contentArea, 3);
+        var online = CreateOnlineCard(out onlineCountValue, out onlineCards);
+        Grid.SetColumn(online, 2);
+        Grid.SetRowSpan(online, 2);
+        contentArea.Children.Add(online);
+        Grid.SetRow(contentArea, 1);
         root.Children.Add(contentArea);
         Content = root;
 
@@ -230,6 +129,156 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         {
             _ = RefreshAsync();
             _ = RefreshLoopAsync();
+        };
+
+    }
+
+    private Grid CreateSummary(out TextBlock totalTokensValue, out TextBlock requestsValue, out TextBlock activeValue,
+        out TextBlock errorsValue, out TextBlock latencyValue, out Border errorsAccent, out Border latencyAccent)
+    {
+        var summary = new Grid { Margin = new Thickness(0, 0, 0, 18) };
+        summary.ColumnDefinitions.Add(new ColumnDefinition());
+        summary.ColumnDefinitions.Add(new ColumnDefinition());
+        summary.ColumnDefinitions.Add(new ColumnDefinition());
+        summary.ColumnDefinitions.Add(new ColumnDefinition());
+        summary.ColumnDefinitions.Add(new ColumnDefinition());
+        summary.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var totalTokens = CreateMetricValue("0");
+        var requests = CreateMetricValue("0");
+        var active = CreateMetricValue("0");
+        var errors = CreateMetricValue("0");
+        var latency = CreateMetricValue("--");
+        summary.Children.Add(CreateSummaryCard(0, 0, "TOTAL TOKENS", totalTokens, "Across this period", Accent, out _));
+        summary.Children.Add(CreateSummaryCard(1, 0, "REQUESTS", requests, "All team members", Accent, out _));
+        summary.Children.Add(CreateSummaryCard(2, 0, "ACTIVE NOW", active, "Currently online", Success, out _));
+        summary.Children.Add(CreateSummaryCard(3, 0, "ERRORS", errors, "Needs attention", Error, out errorsAccent));
+        summary.Children.Add(CreateSummaryCard(4, 0, "AVG LATENCY", latency, "Across active users", TextMuted, out latencyAccent));
+        totalTokensValue = totalTokens;
+        requestsValue = requests;
+        activeValue = active;
+        errorsValue = errors;
+        latencyValue = latency;
+        return summary;
+    }
+
+    private Border CreateUsageCard(out TextBlock tokens, out TextBlock requests, out TextBlock errors, out TextBlock latency)
+    {
+        tokens = CreateUsageValue("--");
+        requests = CreateUsageValue("--");
+        errors = CreateUsageValue("--");
+        latency = CreateUsageValue("--");
+        var metrics = new Grid { Margin = new Thickness(0, 12, 0, 0) };
+        for (var i = 0; i < 4; i++)
+            metrics.ColumnDefinitions.Add(new ColumnDefinition());
+        AddUsageMetric(metrics, 0, "TOKENS", tokens);
+        AddUsageMetric(metrics, 1, "REQUESTS", requests);
+        AddUsageMetric(metrics, 2, "ERRORS", errors);
+        AddUsageMetric(metrics, 3, "AVG LATENCY", latency);
+
+        var content = new StackPanel { Margin = new Thickness(18, 14, 18, 13) };
+        content.Children.Add(new TextBlock
+        {
+            Text = "YOUR USAGE",
+            Foreground = new SolidColorBrush(Accent),
+            FontSize = 11,
+            FontWeight = FontWeights.SemiBold,
+        });
+        content.Children.Add(metrics);
+        var card = new Border
+        {
+            Height = 117,
+            Margin = new Thickness(0, 0, 0, 19),
+            Background = new SolidColorBrush(BgSurface),
+            BorderBrush = new SolidColorBrush(BgBorder),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            Child = content,
+        };
+        return card;
+    }
+
+    private static void AddUsageMetric(Grid metrics, int column, string label, TextBlock value)
+    {
+        var block = new StackPanel();
+        block.Children.Add(new TextBlock
+        {
+            Text = label,
+            Foreground = new SolidColorBrush(TextMuted),
+            FontSize = 9,
+            FontWeight = FontWeights.SemiBold,
+        });
+        block.Children.Add(value);
+        Grid.SetColumn(block, column);
+        metrics.Children.Add(block);
+    }
+
+    private Border CreateOnlineCard(out TextBlock count, out StackPanel cards)
+    {
+        count = new TextBlock
+        {
+            Text = "0 people online",
+            Foreground = new SolidColorBrush(TextPrimary),
+            FontSize = 11,
+            HorizontalAlignment = HorizontalAlignment.Right,
+        };
+        cards = new StackPanel();
+        var title = new Grid();
+        title.ColumnDefinitions.Add(new ColumnDefinition());
+        title.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        var titleCopy = new StackPanel { Orientation = Orientation.Horizontal };
+        titleCopy.Children.Add(new Border
+        {
+            Width = 7,
+            Height = 7,
+            Background = new SolidColorBrush(Success),
+            CornerRadius = new CornerRadius(4),
+            Margin = new Thickness(0, 0, 7, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        titleCopy.Children.Add(new TextBlock
+        {
+            Text = "ONLINE NOW",
+            Foreground = new SolidColorBrush(Success),
+            FontSize = 11,
+            FontWeight = FontWeights.SemiBold,
+        });
+        title.Children.Add(titleCopy);
+        Grid.SetColumn(count, 1);
+        title.Children.Add(count);
+
+        var content = new Grid { Margin = new Thickness(18, 16, 18, 16) };
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        content.Children.Add(title);
+        var subtitle = new TextBlock
+        {
+            Text = "Most-used model by active user",
+            Foreground = new SolidColorBrush(TextMuted),
+            FontSize = 10,
+            Margin = new Thickness(0, 8, 0, 0),
+        };
+        Grid.SetRow(subtitle, 1);
+        content.Children.Add(subtitle);
+        content.RowDefinitions.Add(new RowDefinition());
+        var cardsScroll = new ScrollViewer
+        {
+            Content = cards,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Margin = new Thickness(0, 14, 0, 0),
+        };
+        ConfigureScrollViewer(cardsScroll);
+        Grid.SetRow(cardsScroll, 2);
+        content.Children.Add(cardsScroll);
+
+        return new Border
+        {
+            Background = new SolidColorBrush(BgSurface),
+            BorderBrush = new SolidColorBrush(BgBorder),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(10),
+            Child = content,
         };
     }
 
@@ -247,28 +296,31 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
     {
         if (loading || lifetime.IsCancellationRequested) return;
         loading = true;
-        refresh.IsEnabled = false;
-        status.Foreground = new SolidColorBrush(TextSecondary);
-        status.Text = "Syncing latest telemetry...";
         try
         {
             if (string.IsNullOrWhiteSpace(apiKey)) throw new InvalidOperationException("No Latrix API key was found.");
-            var users = await latrix.ReadTelemetryAsync(apiKey, selectedRangeDays, lifetime.Token);
+            var users = await latrix.ReadTelemetryAsync(apiKey, 7, lifetime.Token);
+            if (currentUserId == null)
+            {
+                try
+                {
+                    var identity = await latrix.ReadIdentityAsync(apiKey, lifetime.Token);
+                    currentUserId = identity.UserId;
+                    currentUserName = identity.Name;
+                }
+                catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { throw; }
+                catch (Exception) { }
+            }
             Render(users);
-            status.Foreground = new SolidColorBrush(TextSecondary);
-            status.Text = $"{users.Count} people  /  updated {DateTime.Now:HH:mm:ss}  /  auto-refresh every 20s";
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
-        catch (Exception error)
+        catch (Exception)
         {
-            status.Foreground = new SolidColorBrush(Error);
-            status.Text = error.Message;
             Render(Array.Empty<TelemetryPerson>());
         }
         finally
         {
             loading = false;
-            refresh.IsEnabled = true;
         }
     }
 
@@ -286,15 +338,96 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         activeValue.Text = activeUsers.ToString(CultureInfo.InvariantCulture);
         errorsValue.Text = totalErrors.ToString("N0", CultureInfo.InvariantCulture);
         errorsValue.Foreground = new SolidColorBrush(totalErrors > 0 ? Error : TextPrimary);
+        latencyValue.Text = latencyUsers.Length == 0 ? "--" : FormatLatency(latencyUsers.Average(user => user.AverageLatencyMs));
+        latencyValue.Foreground = new SolidColorBrush(latencyUsers.Any(user => user.AverageLatencyMs >= 15000) ? Warning : TextPrimary);
         errorsAccent.Background = new SolidColorBrush(totalErrors > 0 ? Error : TextMuted);
-        latencyValue.Text = latencyUsers.Length == 0
-            ? "--"
-            : FormatLatency(latencyUsers.Average(user => user.AverageLatencyMs));
-        var highLatency = latencyUsers.Any(user => user.AverageLatencyMs >= 15000);
-        latencyValue.Foreground = new SolidColorBrush(highLatency ? Warning : TextPrimary);
-        latencyAccent.Background = new SolidColorBrush(highLatency ? Warning : TextMuted);
+        latencyAccent.Background = new SolidColorBrush(latencyUsers.Any(user => user.AverageLatencyMs >= 15000) ? Warning : TextMuted);
 
+        var current = FindCurrentUser(ordered);
+        yourTokensValue.Text = current == null ? "--" : FormatTokens(current.TotalTokens);
+        yourRequestsValue.Text = current == null ? "--" : current.Requests.ToString("N0", CultureInfo.InvariantCulture);
+        yourErrorsValue.Text = current == null ? "--" : current.Errors.ToString("N0", CultureInfo.InvariantCulture);
+        yourLatencyValue.Text = current == null || current.AverageLatencyMs <= 0 ? "--" : FormatLatency(current.AverageLatencyMs);
+
+        onlineCountValue.Text = $"{activeUsers} people online";
+        RenderOnlineUsers(ordered.Where(user => user.Online));
         RenderRows();
+    }
+
+    private void RenderOnlineUsers(IEnumerable<TelemetryPerson> users)
+    {
+        onlineCards.Children.Clear();
+        var onlineUsers = users.OrderByDescending(user => user.LastActiveUtc ?? DateTimeOffset.MinValue).ToArray();
+        if (onlineUsers.Length == 0)
+        {
+            onlineCards.Children.Add(new TextBlock
+            {
+                Text = "Waiting for identity...",
+                Foreground = new SolidColorBrush(TextSecondary),
+                FontSize = 12,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                TextAlignment = TextAlignment.Center,
+                Margin = new Thickness(0, 34, 0, 0),
+            });
+            return;
+        }
+
+        foreach (var user in onlineUsers)
+        {
+            var model = (user.Breakdown ?? Array.Empty<TelemetryBreakdown>())
+                .OrderByDescending(breakdown => breakdown.TotalTokens)
+                .FirstOrDefault();
+            var effort = model?.EffortItems?.OrderByDescending(item => item.Requests).FirstOrDefault();
+            onlineCards.Children.Add(CreateOnlineUserCard(user, model?.Model, effort?.Effort));
+        }
+    }
+
+    private static Border CreateOnlineUserCard(TelemetryPerson user, string model, string effort)
+    {
+        var details = new StackPanel();
+        details.Children.Add(new TextBlock
+        {
+            Text = user.Name,
+            Foreground = new SolidColorBrush(TextPrimary),
+            FontSize = 11,
+            FontWeight = FontWeights.SemiBold,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        });
+        details.Children.Add(new TextBlock
+        {
+            Text = $"MODEL  {(string.IsNullOrWhiteSpace(model) ? "--" : model)}",
+            Foreground = new SolidColorBrush(TextSecondary),
+            FontSize = 10,
+            Margin = new Thickness(0, 5, 0, 0),
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        });
+        details.Children.Add(new TextBlock
+        {
+            Text = $"EFFORT  {(string.IsNullOrWhiteSpace(effort) ? "--" : effort)}",
+            Foreground = new SolidColorBrush(Accent),
+            FontSize = 10,
+            Margin = new Thickness(0, 3, 0, 0),
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        });
+        return new Border
+        {
+            Background = new SolidColorBrush(BgElevated),
+            BorderBrush = new SolidColorBrush(BgBorder),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(6),
+            Padding = new Thickness(10, 8, 10, 8),
+            Margin = new Thickness(0, 0, 0, 8),
+            Child = details,
+        };
+    }
+
+    private TelemetryPerson FindCurrentUser(IReadOnlyList<TelemetryPerson> users)
+    {
+        if (!string.IsNullOrWhiteSpace(currentUserId))
+            return users.FirstOrDefault(user => string.Equals(user.UserId, currentUserId, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrWhiteSpace(currentUserName))
+            return users.FirstOrDefault(user => string.Equals(user.Name, currentUserName, StringComparison.OrdinalIgnoreCase));
+        return null;
     }
 
     private void RenderRows()
@@ -366,7 +499,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
 
     private static Grid CreateHeader()
     {
-        return CreateGrid(new[] { "PERSON", "REQUESTS", "INPUT", "OUTPUT", "REASONING", "TOTAL", "MODELS", "ERRORS", "LATENCY", "LAST ACTIVE" }, true);
+        return CreateGrid(new[] { "TEAM MEMBER", "REQUESTS", "INPUT", "OUTPUT", "REASONING", "TOTAL", "MODELS", "ERRORS", "LATENCY", "LAST ACTIVE" }, true);
     }
 
     private static Grid CreateGrid(string[] values, bool header)
@@ -399,7 +532,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
 
     private Border CreatePersonRow(TelemetryPerson user, int index)
     {
-        var baseColor = index % 2 == 0 ? BgSurface : rowOdd;
+        var baseColor = index % 2 == 0 ? BgSurface : Color.FromRgb(0x18, 0x18, 0x18);
         var row = new Grid
         {
             MinWidth = ColumnWidths.Sum(),
@@ -407,30 +540,8 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             Background = new SolidColorBrush(baseColor),
         };
         AddColumns(row);
-
         var person = new Grid { Margin = new Thickness(16, 0, 8, 0) };
-        person.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(34) });
-        person.ColumnDefinitions.Add(new ColumnDefinition());
-        var avatar = new Border
-        {
-            Width = 30,
-            Height = 30,
-            CornerRadius = new CornerRadius(15),
-            Background = new SolidColorBrush(GetAvatarColor(user.Name)),
-            VerticalAlignment = VerticalAlignment.Center,
-            Child = new TextBlock
-            {
-                Text = GetInitials(user.Name),
-                Foreground = Brushes.White,
-                FontSize = 10,
-                FontWeight = FontWeights.Bold,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextAlignment = TextAlignment.Center,
-            },
-        };
-        person.Children.Add(avatar);
-        var identity = new StackPanel { Margin = new Thickness(10, 0, 0, 0), VerticalAlignment = VerticalAlignment.Center };
+        var identity = new StackPanel { VerticalAlignment = VerticalAlignment.Center };
         var nameLine = new StackPanel { Orientation = Orientation.Horizontal };
         nameLine.Children.Add(new TextBlock
         {
@@ -440,23 +551,6 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             FontWeight = FontWeights.SemiBold,
             TextTrimming = TextTrimming.CharacterEllipsis,
         });
-        if (!string.IsNullOrWhiteSpace(user.Role))
-            nameLine.Children.Add(new Border
-            {
-                Background = Theme.ElevatedBrush,
-                BorderBrush = Theme.BorderStrongBrush,
-                BorderThickness = new Thickness(1),
-                CornerRadius = new CornerRadius(4),
-                Margin = new Thickness(7, 0, 0, 0),
-                Padding = new Thickness(4, 1, 4, 1),
-                Child = new TextBlock
-                {
-                    Text = user.Role.ToUpperInvariant(),
-                    Foreground = new SolidColorBrush(Accent),
-                    FontSize = 8,
-                    FontWeight = FontWeights.Bold,
-                },
-            });
         identity.Children.Add(nameLine);
         identity.Children.Add(new TextBlock
         {
@@ -465,7 +559,6 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             FontSize = 10,
             Margin = new Thickness(0, 3, 0, 0),
         });
-        Grid.SetColumn(identity, 1);
         person.Children.Add(identity);
         AddCell(row, person, 0);
         AddCell(row, user.Requests.ToString("N0", CultureInfo.InvariantCulture), 1);
@@ -479,7 +572,6 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             user.AverageLatencyMs >= 15000 ? Warning : TextSecondary);
         AddCell(row, user.LastActive == "now" ? "Active now" : user.LastActive, 9, false,
             user.Online ? Success : TextSecondary, TextAlignment.Left);
-
         row.MouseEnter += (_, _) => row.Background = new SolidColorBrush(RowHover);
         row.MouseLeave += (_, _) => row.Background = new SolidColorBrush(baseColor);
         return new Border
@@ -547,72 +639,6 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         scroll.Resources.Add(typeof(ScrollBar), scrollStyle);
     }
 
-    private static Button CreateFilterButton(string text, bool selected)
-    {
-        var button = CreatePillButton(text, selected ? Accent : BgSurface,
-            selected ? TextPrimary : TextSecondary, 48);
-        button.Margin = new Thickness(0, 0, 1, 0);
-        return button;
-    }
-
-    private static Button CreatePillButton(string text, Color background, Color foreground, double width)
-    {
-        var button = new Button
-        {
-            Content = text,
-            Width = width,
-            Height = 30,
-            Padding = new Thickness(7, 3, 7, 3),
-            Background = new SolidColorBrush(background),
-            Foreground = new SolidColorBrush(foreground),
-            BorderBrush = Theme.ButtonBorderBrush,
-            BorderThickness = new Thickness(1),
-            FontSize = 10,
-            FontWeight = FontWeights.SemiBold,
-            Cursor = Cursors.Hand,
-        };
-        var template = new ControlTemplate(typeof(Button));
-        var border = new FrameworkElementFactory(typeof(Border));
-        border.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(Control.BackgroundProperty));
-        border.SetValue(Border.BorderBrushProperty, new TemplateBindingExtension(Control.BorderBrushProperty));
-        border.SetValue(Border.BorderThicknessProperty, new TemplateBindingExtension(Control.BorderThicknessProperty));
-        border.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
-        var content = new FrameworkElementFactory(typeof(ContentPresenter));
-        content.SetValue(ContentPresenter.ContentProperty, new TemplateBindingExtension(ContentControl.ContentProperty));
-        content.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
-        content.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
-        content.SetValue(ContentPresenter.MarginProperty, new TemplateBindingExtension(Control.PaddingProperty));
-        border.AppendChild(content);
-        template.VisualTree = border;
-        var style = new Style(typeof(Button));
-        style.Setters.Add(new Setter(Control.TemplateProperty, template));
-        var hover = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
-        hover.Setters.Add(new Setter(Control.BorderBrushProperty, new SolidColorBrush(Accent)));
-        style.Triggers.Add(hover);
-        button.Style = style;
-        return button;
-    }
-
-    private StackPanel CreateRangeSelector()
-    {
-        var filters = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 8, 0) };
-        foreach (var option in new[] { ("24h", 1), ("7d", 7), ("30d", 30) })
-        {
-            var button = CreateFilterButton(option.Item1, option.Item2 == selectedRangeDays);
-            button.Click += (_, _) =>
-            {
-                selectedRangeDays = option.Item2;
-                foreach (var filter in rangeFilters.Children.OfType<Button>())
-                    filter.Background = new SolidColorBrush((int)filter.Tag == selectedRangeDays
-                        ? Accent : BgSurface);
-                _ = RefreshAsync();
-            };
-            button.Tag = option.Item2;
-            filters.Children.Add(button);
-        }
-        return filters;
-    }
-
     private static TextBlock CreateMetricValue(string text)
     {
         return new TextBlock
@@ -624,10 +650,21 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         };
     }
 
-    private static Border CreateSummaryCard(int column, string label, TextBlock value,
-        string detail, Color accent, out Border accentBar)
+    private static TextBlock CreateUsageValue(string text)
     {
-        var content = new StackPanel { Margin = new Thickness(16, 13, 12, 13) };
+        return new TextBlock
+        {
+            Text = text,
+            Foreground = new SolidColorBrush(TextSecondary),
+            FontSize = 12,
+            Margin = new Thickness(0, 5, 0, 0),
+        };
+    }
+
+    private static Border CreateSummaryCard(int column, int row, string label, TextBlock value,
+        string detail, Color accent, out Border accentBar, int columnSpan = 1)
+    {
+        var content = new StackPanel { Margin = new Thickness(15, 13, 12, 11) };
         content.Children.Add(new TextBlock
         {
             Text = label,
@@ -660,83 +697,28 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         };
         card.Children.Add(accentBar);
         card.Children.Add(content);
-        var wrapper = new Border { Child = card, Margin = new Thickness(column == 0 ? 0 : 5, 0, column == 4 ? 0 : 5, 0) };
-        Grid.SetColumn(wrapper, column);
-        return wrapper;
-    }
-
-    private static Button CreateButton(string text, Func<Task> action)
-    {
-        var button = new Button
+        var wrapper = new Border
         {
-            Content = text,
-            MinWidth = 84,
-            Height = 34,
-            Padding = new Thickness(12, 4, 12, 4),
-            Background = new SolidColorBrush(Accent),
-            Foreground = Brushes.White,
-            BorderBrush = new SolidColorBrush(Accent),
-            BorderThickness = new Thickness(1),
-            FontSize = 11,
-            FontWeight = FontWeights.SemiBold,
-            Cursor = Cursors.Hand,
+            Margin = new Thickness(column == 0 ? 0 : 5, 0, column == 4 ? 0 : 5, 0),
+            Child = card,
         };
-        var template = new ControlTemplate(typeof(Button));
-        var border = new FrameworkElementFactory(typeof(Border));
-        border.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(Control.BackgroundProperty));
-        border.SetValue(Border.BorderBrushProperty, new TemplateBindingExtension(Control.BorderBrushProperty));
-        border.SetValue(Border.BorderThicknessProperty, new TemplateBindingExtension(Control.BorderThicknessProperty));
-        border.SetValue(Border.CornerRadiusProperty, new CornerRadius(8));
-        var content = new FrameworkElementFactory(typeof(ContentPresenter));
-        content.SetValue(ContentPresenter.ContentProperty, new TemplateBindingExtension(ContentControl.ContentProperty));
-        content.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
-        content.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
-        content.SetValue(ContentPresenter.MarginProperty, new TemplateBindingExtension(Control.PaddingProperty));
-        border.AppendChild(content);
-        template.VisualTree = border;
-        var style = new Style(typeof(Button));
-        style.Setters.Add(new Setter(Control.TemplateProperty, template));
-        style.Setters.Add(new Setter(Control.BackgroundProperty, button.Background));
-        style.Setters.Add(new Setter(Control.BorderBrushProperty, button.BorderBrush));
-        var hover = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
-        hover.Setters.Add(new Setter(Control.BackgroundProperty, Theme.AccentHoverBrush));
-        style.Triggers.Add(hover);
-        var pressed = new Trigger { Property = ButtonBase.IsPressedProperty, Value = true };
-        pressed.Setters.Add(new Setter(Control.BackgroundProperty, Theme.AccentPressedBrush));
-        style.Triggers.Add(pressed);
-        button.Style = style;
-        button.Click += async (_, _) => await action();
-        return button;
+        Grid.SetColumn(wrapper, column);
+        Grid.SetRow(wrapper, row);
+        if (columnSpan > 1) Grid.SetColumnSpan(wrapper, columnSpan);
+        return wrapper;
     }
 
     private static TextBlock CreateEmptyState()
     {
         return new TextBlock
         {
-            Text = "No telemetry data for this period.",
+            Text = "No teammate activity in this period.",
             Foreground = new SolidColorBrush(TextSecondary),
             FontSize = 12,
             HorizontalAlignment = HorizontalAlignment.Center,
             TextAlignment = TextAlignment.Center,
             Margin = new Thickness(20, 42, 20, 42),
         };
-    }
-
-    private static string GetInitials(string name)
-    {
-        var words = (name ?? "?").Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        if (words.Length == 0) return "?";
-        return words.Length == 1
-            ? words[0].Substring(0, 1).ToUpperInvariant()
-            : (words[0].Substring(0, 1) + words[^1].Substring(0, 1)).ToUpperInvariant();
-    }
-
-    private static Color GetAvatarColor(string name)
-    {
-        var colors = new[] { Accent, Accent, Theme.ButtonBorderHover, Accent };
-        var hash = 17;
-        foreach (var character in name ?? "") hash = unchecked(hash * 31 + character);
-        return colors[(hash & int.MaxValue) % colors.Length];
     }
 
     private static string FormatPresence(string lastActive) =>

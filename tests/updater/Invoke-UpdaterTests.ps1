@@ -32,6 +32,7 @@ $script:BuildInputs = @(
     "src/WidgetWindow.cs",
     "src/TelemetryPanel.cs",
     "src/TelemetryWindow.cs",
+    "src/Theme.cs",
     "src/NativeTypes.cs",
     "src/LatrixIntegration.cs",
     "src/UpdateService.cs",

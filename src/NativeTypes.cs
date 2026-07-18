@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace CodexUsageTray;
@@ -9,7 +10,17 @@ internal sealed record UsageDisplay(string FiveHour, string FiveHourReset, strin
     public static readonly UsageDisplay Empty = new("--", "", "--", "");
 }
 
-internal sealed record TelemetryBreakdown(string Model, long TotalTokens, int Requests, string Efforts);
+internal sealed record LatrixIdentity(string UserId, string Name, string Role);
+
+internal sealed record TelemetryEffort(string Effort, int Requests);
+
+internal sealed record TelemetryBreakdown(string Provider, string Model, long TotalTokens, int Requests, string Efforts,
+    IReadOnlyList<TelemetryEffort> EffortItems = null);
+
+internal sealed record OnlineActiveModel(string Provider, string Model, long DeltaTokens, int DeltaRequests,
+    string Effort = null);
+
+internal sealed record OnlineActivitySnapshot(OnlineActiveModel Model, DateTime DetectedAtUtc);
 
 internal sealed record TelemetryPerson(
     string UserId,
@@ -26,4 +37,5 @@ internal sealed record TelemetryPerson(
     int Errors,
     double AverageLatencyMs,
     string LastActive,
+    DateTimeOffset? LastActiveUtc,
     IReadOnlyList<TelemetryBreakdown> Breakdown);
