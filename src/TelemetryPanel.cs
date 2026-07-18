@@ -35,16 +35,11 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
     private readonly string apiKey;
     private readonly CancellationTokenSource lifetime = new();
     private readonly StackPanel rows;
-    private readonly StackPanel passiveRows;
     private readonly TextBlock totalTokensValue;
     private readonly TextBlock requestsValue;
     private readonly TextBlock activeValue;
     private readonly TextBlock errorsValue;
     private readonly TextBlock latencyValue;
-    private readonly TextBlock yourTokensValue;
-    private readonly TextBlock yourRequestsValue;
-    private readonly TextBlock yourErrorsValue;
-    private readonly TextBlock yourLatencyValue;
     private readonly TextBlock onlineCountValue;
     private readonly StackPanel onlineCards;
     private readonly Border errorsAccent;
@@ -52,7 +47,6 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
     private IReadOnlyList<TelemetryPerson> currentUsers = Array.Empty<TelemetryPerson>();
     private string currentUserId;
     private string currentUserName;
-    private bool passiveExpanded;
     private bool loading;
 
     public TelemetryPanel(LatrixApiClient latrix, string apiKey)
@@ -79,12 +73,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         contentArea.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });
         contentArea.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         var leftContent = new Grid();
-        leftContent.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         leftContent.RowDefinitions.Add(new RowDefinition());
-
-        var usage = CreateUsageCard(out yourTokensValue, out yourRequestsValue, out yourErrorsValue, out yourLatencyValue);
-        Grid.SetRow(usage, 0);
-        leftContent.Children.Add(usage);
 
         var table = new Border
         {
@@ -101,7 +90,6 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         Grid.SetRow(header, 0);
         tableRoot.Children.Add(header);
         rows = new StackPanel();
-        passiveRows = new StackPanel { Visibility = Visibility.Collapsed };
         var scroll = new ScrollViewer
         {
             Content = rows,
@@ -113,7 +101,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         Grid.SetRow(scroll, 1);
         tableRoot.Children.Add(scroll);
         table.Child = tableRoot;
-        Grid.SetRow(table, 1);
+        Grid.SetRow(table, 0);
         leftContent.Children.Add(table);
         contentArea.Children.Add(leftContent);
 
@@ -162,56 +150,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         return summary;
     }
 
-    private Border CreateUsageCard(out TextBlock tokens, out TextBlock requests, out TextBlock errors, out TextBlock latency)
-    {
-        tokens = CreateUsageValue("--");
-        requests = CreateUsageValue("--");
-        errors = CreateUsageValue("--");
-        latency = CreateUsageValue("--");
-        var metrics = new Grid { Margin = new Thickness(0, 12, 0, 0) };
-        for (var i = 0; i < 4; i++)
-            metrics.ColumnDefinitions.Add(new ColumnDefinition());
-        AddUsageMetric(metrics, 0, "TOKENS", tokens);
-        AddUsageMetric(metrics, 1, "REQUESTS", requests);
-        AddUsageMetric(metrics, 2, "ERRORS", errors);
-        AddUsageMetric(metrics, 3, "AVG LATENCY", latency);
 
-        var content = new StackPanel { Margin = new Thickness(18, 14, 18, 13) };
-        content.Children.Add(new TextBlock
-        {
-            Text = "YOUR USAGE",
-            Foreground = new SolidColorBrush(Accent),
-            FontSize = 11,
-            FontWeight = FontWeights.SemiBold,
-        });
-        content.Children.Add(metrics);
-        var card = new Border
-        {
-            Height = 117,
-            Margin = new Thickness(0, 0, 0, 19),
-            Background = new SolidColorBrush(BgSurface),
-            BorderBrush = new SolidColorBrush(BgBorder),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(10),
-            Child = content,
-        };
-        return card;
-    }
-
-    private static void AddUsageMetric(Grid metrics, int column, string label, TextBlock value)
-    {
-        var block = new StackPanel();
-        block.Children.Add(new TextBlock
-        {
-            Text = label,
-            Foreground = new SolidColorBrush(TextMuted),
-            FontSize = 9,
-            FontWeight = FontWeights.SemiBold,
-        });
-        block.Children.Add(value);
-        Grid.SetColumn(block, column);
-        metrics.Children.Add(block);
-    }
 
     private Border CreateOnlineCard(out TextBlock count, out StackPanel cards)
     {
@@ -344,10 +283,6 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         latencyAccent.Background = new SolidColorBrush(latencyUsers.Any(user => user.AverageLatencyMs >= 15000) ? Warning : TextMuted);
 
         var current = FindCurrentUser(ordered);
-        yourTokensValue.Text = current == null ? "--" : FormatTokens(current.TotalTokens);
-        yourRequestsValue.Text = current == null ? "--" : current.Requests.ToString("N0", CultureInfo.InvariantCulture);
-        yourErrorsValue.Text = current == null ? "--" : current.Errors.ToString("N0", CultureInfo.InvariantCulture);
-        yourLatencyValue.Text = current == null || current.AverageLatencyMs <= 0 ? "--" : FormatLatency(current.AverageLatencyMs);
 
         onlineCountValue.Text = $"{activeUsers} people online";
         RenderOnlineUsers(ordered.Where(user => user.Online));
@@ -433,68 +368,15 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
     private void RenderRows()
     {
         rows.Children.Clear();
-        passiveRows.Children.Clear();
-        var active = currentUsers.Where(user => !IsPassive(user)).ToArray();
-        var passive = currentUsers.Where(IsPassive).ToArray();
-        for (var index = 0; index < active.Length; index++)
-            rows.Children.Add(CreatePersonRow(active[index], index));
-        for (var index = 0; index < passive.Length; index++)
-            passiveRows.Children.Add(CreatePersonRow(passive[index], index + active.Length));
-
-        if (active.Length == 0 && passive.Length == 0)
-            rows.Children.Add(CreateEmptyState());
-        if (passive.Length > 0)
+        if (currentUsers.Any())
         {
-            rows.Children.Add(CreatePassiveHeader(passive.Length));
-            rows.Children.Add(passiveRows);
-            passiveRows.Visibility = passiveExpanded ? Visibility.Visible : Visibility.Collapsed;
+            for (var index = 0; index < currentUsers.Count; index++)
+                rows.Children.Add(CreatePersonRow(currentUsers[index], index));
         }
-    }
-
-    private static bool IsPassive(TelemetryPerson user) =>
-        !user.Online && user.Requests == 0 && user.TotalTokens == 0;
-
-    private Border CreatePassiveHeader(int count)
-    {
-        var button = new Button
+        else
         {
-            Content = $"NO RECENT ACTIVITY  ·  {count}",
-            HorizontalContentAlignment = HorizontalAlignment.Left,
-            Height = 36,
-            Padding = new Thickness(16, 0, 16, 0),
-            Foreground = new SolidColorBrush(TextSecondary),
-            Background = Theme.ButtonNormalBrush,
-            BorderBrush = new SolidColorBrush(BgBorder),
-            BorderThickness = new Thickness(0, 1, 0, 0),
-            FontSize = 10,
-            FontWeight = FontWeights.SemiBold,
-            Cursor = Cursors.Hand,
-        };
-        var template = new ControlTemplate(typeof(Button));
-        var border = new FrameworkElementFactory(typeof(Border));
-        border.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(Control.BackgroundProperty));
-        border.SetValue(Border.BorderBrushProperty, new TemplateBindingExtension(Control.BorderBrushProperty));
-        border.SetValue(Border.BorderThicknessProperty, new TemplateBindingExtension(Control.BorderThicknessProperty));
-        var content = new FrameworkElementFactory(typeof(ContentPresenter));
-        content.SetValue(ContentPresenter.ContentProperty, new TemplateBindingExtension(ContentControl.ContentProperty));
-        content.SetValue(ContentPresenter.HorizontalAlignmentProperty,
-            new TemplateBindingExtension(Control.HorizontalContentAlignmentProperty));
-        content.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
-        content.SetValue(ContentPresenter.MarginProperty, new TemplateBindingExtension(Control.PaddingProperty));
-        border.AppendChild(content);
-        template.VisualTree = border;
-        var style = new Style(typeof(Button));
-        style.Setters.Add(new Setter(Control.TemplateProperty, template));
-        var hover = new Trigger { Property = UIElement.IsMouseOverProperty, Value = true };
-        hover.Setters.Add(new Setter(Control.BackgroundProperty, new SolidColorBrush(BgElevated)));
-        style.Triggers.Add(hover);
-        button.Style = style;
-        button.Click += (_, _) =>
-        {
-            passiveExpanded = !passiveExpanded;
-            passiveRows.Visibility = passiveExpanded ? Visibility.Visible : Visibility.Collapsed;
-        };
-        return new Border { Child = button };
+            rows.Children.Add(CreateEmptyState());
+        }
     }
 
     private static Grid CreateHeader()
@@ -650,16 +532,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         };
     }
 
-    private static TextBlock CreateUsageValue(string text)
-    {
-        return new TextBlock
-        {
-            Text = text,
-            Foreground = new SolidColorBrush(TextSecondary),
-            FontSize = 12,
-            Margin = new Thickness(0, 5, 0, 0),
-        };
-    }
+
 
     private static Border CreateSummaryCard(int column, int row, string label, TextBlock value,
         string detail, Color accent, out Border accentBar, int columnSpan = 1)

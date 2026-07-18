@@ -318,11 +318,8 @@ internal static class Program
         Equal(3, content.ColumnDefinitions.Count, "telemetry content column count");
         Equal(2, content.Children.Count, "telemetry table and online panel");
         var leftContent = (Grid)content.Children[0];
-        Equal(2, leftContent.RowDefinitions.Count, "telemetry left content row count");
-        var usage = (Border)leftContent.Children[0];
-        var usageContent = (StackPanel)usage.Child;
-        Equal("YOUR USAGE", ((TextBlock)usageContent.Children[0]).Text, "telemetry personal usage title");
-        var table = (Border)leftContent.Children[1];
+        Equal(1, leftContent.RowDefinitions.Count, "telemetry left content row count");
+        var table = (Border)leftContent.Children[0];
         Equal(2, ((Grid)table.Child).RowDefinitions.Count, "telemetry table structure");
         var header = (Grid)((Grid)table.Child).Children[0];
         Equal("TEAM MEMBER", ((TextBlock)header.Children[0]).Text, "telemetry table header");
