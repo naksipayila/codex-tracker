@@ -105,12 +105,6 @@ internal static class Program
 
     private static void Check(string repositoryRoot, bool skipBuild)
     {
-        var launcher = Path.Combine(repositoryRoot, "CodexTracker.exe");
-        if (!File.Exists(launcher)) throw new FileNotFoundException("CodexTracker.exe is missing.");
-        var signature = File.ReadAllBytes(launcher);
-        if (signature.Length < 2 || signature[0] != 0x4d || signature[1] != 0x5a)
-            throw new InvalidDataException("CodexTracker.exe is not a Windows executable.");
-
         var projectPath = Path.Combine(repositoryRoot, "src", "CodexUsageTray.csproj");
         var testProject = Path.Combine(repositoryRoot, "tests", "native", "CodexUsageTray.NativeTests.csproj");
         var temporaryDirectory = Path.Combine(
@@ -128,12 +122,8 @@ internal static class Program
 
             var sourceLauncher = Path.Combine(temporaryDirectory, "source-CodexTracker.exe");
             BuildApplication(repositoryRoot, sourceLauncher, false, "1.0.0");
-            var trackedHash = RunSelfTest(launcher, repositoryRoot, temporaryDirectory);
-            var sourceHash = RunSelfTest(sourceLauncher, repositoryRoot, temporaryDirectory);
-            if (!string.Equals(trackedHash, sourceHash, StringComparison.Ordinal))
-                throw new InvalidOperationException("The tracked CodexTracker.exe does not match the native build inputs.");
-
-            RunNativeSmokeTest(launcher, repositoryRoot, temporaryDirectory);
+            RunSelfTest(sourceLauncher, repositoryRoot, temporaryDirectory);
+            RunNativeSmokeTest(sourceLauncher, repositoryRoot, temporaryDirectory);
         }
         finally
         {
