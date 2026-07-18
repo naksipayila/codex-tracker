@@ -15,6 +15,8 @@ dist/
 build/
 coverage/
 *.log
+CodexTracker.exe
+
 
 # .NET build output
 [Bb]in/
