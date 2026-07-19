@@ -333,8 +333,14 @@ internal static class Program
         Equal(1, root.Children.Count, "telemetry shell child count");
         Equal(1120d, panel.MinWidth, "telemetry dashboard minimum width");
         var dashboard = (Grid)root.Children[0];
-        Equal(3, dashboard.RowDefinitions.Count, "telemetry dashboard row count");
-        var summary = (Grid)dashboard.Children[0];
+        Equal(5, dashboard.RowDefinitions.Count, "telemetry dashboard row count");
+        var periodSelector = (Grid)dashboard.Children[0];
+        var periodButtons = (StackPanel)periodSelector.Children[1];
+        Equal(3, periodButtons.Children.Count, "telemetry period button count");
+        Equal("Daily", ((Button)periodButtons.Children[0]).Content, "daily telemetry period");
+        Equal("7 days", ((Button)periodButtons.Children[1]).Content, "weekly telemetry period");
+        Equal("Monthly", ((Button)periodButtons.Children[2]).Content, "monthly telemetry period");
+        var summary = (Grid)dashboard.Children[2];
         Equal(5, summary.ColumnDefinitions.Count, "telemetry summary column count");
         Equal(1, summary.RowDefinitions.Count, "telemetry summary row count");
         Equal(5, summary.Children.Count, "telemetry summary card children");
@@ -344,7 +350,7 @@ internal static class Program
         Equal(3, Grid.GetColumn(summary.Children[3]), "errors summary column");
         Equal(4, Grid.GetColumn(summary.Children[4]), "latency summary column");
 
-        var content = (Grid)dashboard.Children[1];
+        var content = (Grid)dashboard.Children[4];
         Equal(3, content.ColumnDefinitions.Count, "telemetry content column count");
         Equal(2, content.Children.Count, "telemetry table and online panel");
         var leftContent = (Grid)content.Children[0];
@@ -357,6 +363,7 @@ internal static class Program
         Equal(2, Grid.GetRowSpan(online), "online panel row span");
         var onlineContent = (Grid)online.Child;
         var onlineTitle = (Grid)onlineContent.Children[0];
+        Equal(1, onlineTitle.Children.Count, "online panel title has no count label");
         Equal("ONLINE NOW", ((TextBlock)((StackPanel)onlineTitle.Children[0]).Children[1]).Text, "online panel title");
     }
 

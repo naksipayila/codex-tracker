@@ -41,11 +41,13 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
     private readonly TextBlock activeValue;
     private readonly TextBlock errorsValue;
     private readonly TextBlock latencyValue;
-    private readonly TextBlock onlineCountValue;
     private readonly StackPanel onlineCards;
     private readonly Border errorsAccent;
     private readonly Border latencyAccent;
+    private readonly List<Button> periodButtons = new();
     private IReadOnlyList<TelemetryPerson> currentUsers = Array.Empty<TelemetryPerson>();
+    private IReadOnlySet<string> activeUserIds = new HashSet<string>(StringComparer.Ordinal);
+    private int selectedDays = 7;
     private bool loading;
     private bool activeLoading;
 
@@ -65,11 +67,17 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         var dashboard = new Grid { Margin = new Thickness(24, 24, 24, 24) };
         dashboard.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         dashboard.RowDefinitions.Add(new RowDefinition { Height = new GridLength(18) });
+        dashboard.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        dashboard.RowDefinitions.Add(new RowDefinition { Height = new GridLength(18) });
         dashboard.RowDefinitions.Add(new RowDefinition());
+
+        var periodSelector = CreatePeriodSelector();
+        Grid.SetRow(periodSelector, 0);
+        dashboard.Children.Add(periodSelector);
 
         var summary = CreateSummary(out totalTokensValue, out requestsValue, out activeValue, out errorsValue,
             out latencyValue, out errorsAccent, out latencyAccent);
-        Grid.SetRow(summary, 0);
+        Grid.SetRow(summary, 2);
         dashboard.Children.Add(summary);
 
         var contentArea = new Grid { Margin = new Thickness(0, 0, 0, 0) };
@@ -109,11 +117,11 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         leftContent.Children.Add(table);
         contentArea.Children.Add(leftContent);
 
-        var online = CreateOnlineCard(out onlineCountValue, out onlineCards);
+        var online = CreateOnlineCard(out onlineCards);
         Grid.SetColumn(online, 2);
         Grid.SetRowSpan(online, 2);
         contentArea.Children.Add(online);
-        Grid.SetRow(contentArea, 2);
+        Grid.SetRow(contentArea, 4);
         dashboard.Children.Add(contentArea);
         root.Children.Add(dashboard);
         Content = root;
@@ -126,6 +134,65 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             _ = RefreshActiveLoopAsync();
         };
 
+    }
+
+    private Grid CreatePeriodSelector()
+    {
+        var selector = new Grid();
+        selector.ColumnDefinitions.Add(new ColumnDefinition());
+        selector.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+        selector.Children.Add(new TextBlock
+        {
+            Text = "TELEMETRY",
+            Foreground = new SolidColorBrush(TextPrimary),
+            FontSize = 16,
+            FontWeight = FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+
+        var buttons = new StackPanel { Orientation = Orientation.Horizontal };
+        AddPeriodButton(buttons, "Daily", 1);
+        AddPeriodButton(buttons, "7 days", 7);
+        AddPeriodButton(buttons, "Monthly", 30);
+        Grid.SetColumn(buttons, 1);
+        selector.Children.Add(buttons);
+        UpdatePeriodButtonStyles();
+        return selector;
+    }
+
+    private void AddPeriodButton(Panel parent, string label, int days)
+    {
+        var button = new Button
+        {
+            Content = label,
+            Tag = days,
+            Width = 78,
+            Height = 30,
+            Margin = new Thickness(5, 0, 0, 0),
+            Padding = new Thickness(8, 0, 8, 0),
+            FontSize = 10,
+            BorderThickness = new Thickness(1),
+            Focusable = false,
+        };
+        button.Click += (_, _) =>
+        {
+            selectedDays = days;
+            UpdatePeriodButtonStyles();
+            _ = RefreshAsync();
+        };
+        periodButtons.Add(button);
+        parent.Children.Add(button);
+    }
+
+    private void UpdatePeriodButtonStyles()
+    {
+        foreach (var button in periodButtons)
+        {
+            var selected = (int)button.Tag == selectedDays;
+            button.Background = new SolidColorBrush(selected ? Accent : BgSurface);
+            button.BorderBrush = new SolidColorBrush(selected ? Accent : BgBorder);
+            button.Foreground = new SolidColorBrush(selected ? BgCanvas : TextSecondary);
+        }
     }
 
     private Grid CreateSummary(out TextBlock totalTokensValue, out TextBlock requestsValue, out TextBlock activeValue,
@@ -159,19 +226,10 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
 
 
 
-    private Border CreateOnlineCard(out TextBlock count, out StackPanel cards)
+    private Border CreateOnlineCard(out StackPanel cards)
     {
-        count = new TextBlock
-        {
-            Text = "0 people online",
-            Foreground = new SolidColorBrush(TextPrimary),
-            FontSize = 11,
-            HorizontalAlignment = HorizontalAlignment.Right,
-        };
         cards = new StackPanel();
         var title = new Grid();
-        title.ColumnDefinitions.Add(new ColumnDefinition());
-        title.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var titleCopy = new StackPanel { Orientation = Orientation.Horizontal };
         titleCopy.Children.Add(new Border
         {
@@ -190,8 +248,6 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             FontWeight = FontWeights.SemiBold,
         });
         title.Children.Add(titleCopy);
-        Grid.SetColumn(count, 1);
-        title.Children.Add(count);
 
         var content = new Grid { Margin = new Thickness(18, 16, 18, 16) };
         content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -255,7 +311,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         try
         {
             if (string.IsNullOrWhiteSpace(apiKey)) throw new InvalidOperationException("No Latrix API key was found.");
-            var users = await latrix.ReadTelemetryAsync(apiKey, 7, lifetime.Token);
+            var users = await latrix.ReadTelemetryAsync(apiKey, selectedDays, lifetime.Token);
             Render(users);
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
@@ -313,8 +369,12 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
     private void RenderActiveUsers(IReadOnlyList<LatrixActiveUser> users)
     {
         onlineCards.Children.Clear();
+        activeUserIds = users
+            .Where(user => !string.IsNullOrWhiteSpace(user.UserId))
+            .Select(user => user.UserId)
+            .ToHashSet(StringComparer.Ordinal);
         activeValue.Text = users.Count.ToString(CultureInfo.InvariantCulture);
-        onlineCountValue.Text = $"{users.Count} people online";
+        RenderRows();
         if (users.Count == 0)
         {
             onlineCards.Children.Add(new TextBlock
@@ -409,7 +469,8 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         if (currentUsers.Any())
         {
             for (var index = 0; index < currentUsers.Count; index++)
-                rows.Children.Add(CreatePersonRow(currentUsers[index], index));
+                rows.Children.Add(CreatePersonRow(currentUsers[index], index,
+                    activeUserIds.Contains(currentUsers[index].UserId)));
         }
         else
         {
@@ -450,7 +511,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         return grid;
     }
 
-    private Border CreatePersonRow(TelemetryPerson user, int index)
+    private Border CreatePersonRow(TelemetryPerson user, int index, bool online)
     {
         var baseColor = index % 2 == 0 ? BgSurface : Color.FromRgb(0x18, 0x18, 0x18);
         var row = new Grid
@@ -474,8 +535,8 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         identity.Children.Add(nameLine);
         identity.Children.Add(new TextBlock
         {
-            Text = user.Online ? "Online" : FormatPresence(user.LastActive),
-            Foreground = new SolidColorBrush(user.Online ? Success : TextMuted),
+            Text = online ? "Online" : FormatPresence(user.LastActive),
+            Foreground = new SolidColorBrush(online ? Success : TextMuted),
             FontSize = 10,
             Margin = new Thickness(0, 3, 0, 0),
         });
@@ -490,8 +551,8 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         AddCell(row, user.Errors.ToString("N0", CultureInfo.InvariantCulture), 7, false, user.Errors > 0 ? Error : TextSecondary);
         AddCell(row, user.AverageLatencyMs > 0 ? FormatLatency(user.AverageLatencyMs) : "--", 8, false,
             user.AverageLatencyMs >= 15000 ? Warning : TextSecondary);
-        AddCell(row, user.LastActive == "now" ? "Active now" : user.LastActive, 9, false,
-            user.Online ? Success : TextSecondary, TextAlignment.Left);
+        AddCell(row, online ? "Active now" : user.LastActive, 9, false,
+            online ? Success : TextSecondary, TextAlignment.Left);
         row.MouseEnter += (_, _) => row.Background = new SolidColorBrush(RowHover);
         row.MouseLeave += (_, _) => row.Background = new SolidColorBrush(baseColor);
         return new Border
