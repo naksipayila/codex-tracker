@@ -307,8 +307,18 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             return;
         }
 
-        foreach (var user in onlineUsers)
+        for (var i = 0; i < onlineUsers.Length; i++)
         {
+            if (i > 0)
+            {
+                onlineCards.Children.Add(new Border
+                {
+                    Height = 1,
+                    Background = new SolidColorBrush(BgBorder),
+                    Margin = new Thickness(0, 0, 0, 10),
+                });
+            }
+            var user = onlineUsers[i];
             var model = (user.Breakdown ?? Array.Empty<TelemetryBreakdown>())
                 .OrderByDescending(breakdown => breakdown.TotalTokens)
                 .FirstOrDefault();
@@ -317,43 +327,57 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         }
     }
 
-    private static Border CreateOnlineUserCard(TelemetryPerson user, string model, string effort)
+    private static UIElement CreateOnlineUserCard(TelemetryPerson user, string model, string effort)
     {
-        var details = new StackPanel();
-        details.Children.Add(new TextBlock
+        var row = new StackPanel();
+
+        var nameLine = new StackPanel { Orientation = Orientation.Horizontal };
+        nameLine.Children.Add(new Border
+        {
+            Width = 6,
+            Height = 6,
+            Background = new SolidColorBrush(Success),
+            CornerRadius = new CornerRadius(3),
+            Margin = new Thickness(0, 0, 7, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        });
+        nameLine.Children.Add(new TextBlock
         {
             Text = user.Name,
             Foreground = new SolidColorBrush(TextPrimary),
             FontSize = 11,
             FontWeight = FontWeights.SemiBold,
+            VerticalAlignment = VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis,
         });
-        details.Children.Add(new TextBlock
+        row.Children.Add(nameLine);
+
+        var usageLine = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(13, 3, 0, 0) };
+        var modelText = string.IsNullOrWhiteSpace(model) ? "--" : model;
+        var effortText = string.IsNullOrWhiteSpace(effort) ? "--" : effort;
+        usageLine.Children.Add(new TextBlock
         {
-            Text = $"MODEL  {(string.IsNullOrWhiteSpace(model) ? "--" : model)}",
-            Foreground = new SolidColorBrush(TextSecondary),
-            FontSize = 10,
-            Margin = new Thickness(0, 5, 0, 0),
-            TextTrimming = TextTrimming.CharacterEllipsis,
-        });
-        details.Children.Add(new TextBlock
-        {
-            Text = $"EFFORT  {(string.IsNullOrWhiteSpace(effort) ? "--" : effort)}",
+            Text = modelText,
             Foreground = new SolidColorBrush(Accent),
             FontSize = 10,
-            Margin = new Thickness(0, 3, 0, 0),
             TextTrimming = TextTrimming.CharacterEllipsis,
         });
-        return new Border
+        usageLine.Children.Add(new TextBlock
         {
-            Background = new SolidColorBrush(BgElevated),
-            BorderBrush = new SolidColorBrush(BgBorder),
-            BorderThickness = new Thickness(1),
-            CornerRadius = new CornerRadius(6),
-            Padding = new Thickness(10, 8, 10, 8),
-            Margin = new Thickness(0, 0, 0, 8),
-            Child = details,
-        };
+            Text = " · ",
+            Foreground = new SolidColorBrush(TextMuted),
+            FontSize = 10,
+        });
+        usageLine.Children.Add(new TextBlock
+        {
+            Text = effortText,
+            Foreground = new SolidColorBrush(TextSecondary),
+            FontSize = 10,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+        });
+        row.Children.Add(usageLine);
+
+        return row;
     }
 
     private TelemetryPerson FindCurrentUser(IReadOnlyList<TelemetryPerson> users)
