@@ -1,5 +1,6 @@
 using CodexUsageTray;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -317,7 +318,8 @@ internal static class Program
         progress.ReportDownload(5 * 1024 * 1024, 10 * 1024 * 1024);
         Equal(false, progress.IsIndeterminate, "update progress determinate mode");
         Equal(50d, progress.ProgressValue, "update download percentage");
-        Equal("5.0 MB / 10.0 MB", progress.DetailsText, "update download byte count");
+        Equal($"{5.0.ToString("0.0", CultureInfo.CurrentCulture)} MB / {10.0.ToString("0.0", CultureInfo.CurrentCulture)} MB",
+            progress.DetailsText, "update download byte count");
 
         progress.ReportVerifying();
         Equal("Verifying update...", progress.StatusText, "update verification status");
@@ -340,7 +342,7 @@ internal static class Program
         Equal("Daily", ((Button)periodButtons.Children[0]).Content, "daily telemetry period");
         Equal("7 days", ((Button)periodButtons.Children[1]).Content, "weekly telemetry period");
         Equal("Monthly", ((Button)periodButtons.Children[2]).Content, "monthly telemetry period");
-        var summary = (Grid)dashboard.Children[2];
+        var summary = (Grid)dashboard.Children[1];
         Equal(5, summary.ColumnDefinitions.Count, "telemetry summary column count");
         Equal(1, summary.RowDefinitions.Count, "telemetry summary row count");
         Equal(5, summary.Children.Count, "telemetry summary card children");
@@ -350,7 +352,7 @@ internal static class Program
         Equal(3, Grid.GetColumn(summary.Children[3]), "errors summary column");
         Equal(4, Grid.GetColumn(summary.Children[4]), "latency summary column");
 
-        var content = (Grid)dashboard.Children[4];
+        var content = (Grid)dashboard.Children[2];
         Equal(3, content.ColumnDefinitions.Count, "telemetry content column count");
         Equal(2, content.Children.Count, "telemetry table and online panel");
         var leftContent = (Grid)content.Children[0];
