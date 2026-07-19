@@ -7,7 +7,7 @@ namespace CodexTracker.Tooling;
 
 internal static class Program
 {
-    private const string SdkVersion = "8.0.422";
+    private const string SdkVersion = "8.0.423";
 
     private static int Main(string[] args)
     {
