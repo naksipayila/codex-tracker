@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
@@ -102,7 +103,8 @@ internal sealed class WidgetWindow : Window
             FontWeight = Theme.FontWeightBold,
             VerticalAlignment = VerticalAlignment.Center,
             HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(4, 0, 8, 0),
+            Margin = new Thickness(4, 0, 14, 0),
+            Padding = new Thickness(10, 6, 10, 6),
             ToolTip = CreateOnlineTooltip(Array.Empty<string>(), false),
             Effect = WidgetTextOutline,
         };
@@ -133,10 +135,9 @@ internal sealed class WidgetWindow : Window
         weeklyReset.Text = usage.WeeklyReset;
     }
 
-    public void UpdateOnlineUsers(IReadOnlyList<TelemetryPerson> users)
+    public void UpdateOnlineUsers(IReadOnlyList<LatrixActiveUser> users)
     {
         var names = users
-            .Where(user => user.Online)
             .Select(user => user.Name)
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .Distinct(StringComparer.OrdinalIgnoreCase)
@@ -209,19 +210,20 @@ internal sealed class WidgetWindow : Window
         divider.Margin = new Thickness(0);
     }
 
-    private static Border CreateOnlineTooltip(IReadOnlyList<string> names, bool available)
+    private static ToolTip CreateOnlineTooltip(IReadOnlyList<string> names, bool available)
     {
         var lines = available && names.Count > 0
             ? new[] { $"{names.Count} kişi online" }.Concat(names).ToArray()
             : new[] { available ? "Şu anda online kişi yok" : "Online bilgisi alınamadı" };
-        return new Border
+        return new ToolTip
         {
-            Background = Theme.ElevatedBrush,
+            Placement = PlacementMode.Top,
+            Background = Theme.BgBrush,
             BorderBrush = Theme.BorderBrush,
             BorderThickness = new Thickness(1),
-            CornerRadius = Theme.RadiusSmall,
-            Padding = new Thickness(6, 4, 6, 4),
-            Child = new TextBlock
+            Padding = new Thickness(8, 6, 8, 6),
+            HasDropShadow = true,
+            Content = new TextBlock
             {
                 Text = string.Join(Environment.NewLine, lines),
                 FontFamily = Theme.FontFamilyValue,

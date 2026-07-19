@@ -47,6 +47,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
     private readonly Border latencyAccent;
     private IReadOnlyList<TelemetryPerson> currentUsers = Array.Empty<TelemetryPerson>();
     private bool loading;
+    private bool activeLoading;
 
     public TelemetryPanel(LatrixApiClient latrix, string apiKey)
     {
@@ -121,6 +122,8 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         {
             _ = RefreshAsync();
             _ = RefreshLoopAsync();
+            _ = RefreshActiveAsync();
+            _ = RefreshActiveLoopAsync();
         };
 
     }
@@ -235,6 +238,16 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
     }
 
+    private async Task RefreshActiveLoopAsync()
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(4));
+            while (await timer.WaitForNextTickAsync(lifetime.Token)) await RefreshActiveAsync();
+        }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
+    }
+
     private async Task RefreshAsync()
     {
         if (loading || lifetime.IsCancellationRequested) return;
@@ -256,6 +269,27 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         }
     }
 
+    private async Task RefreshActiveAsync()
+    {
+        if (activeLoading || lifetime.IsCancellationRequested) return;
+        activeLoading = true;
+        try
+        {
+            if (string.IsNullOrWhiteSpace(apiKey)) throw new InvalidOperationException("No Latrix API key was found.");
+            var users = await latrix.ReadActiveAsync(apiKey, lifetime.Token);
+            RenderActiveUsers(users);
+        }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested) { }
+        catch (Exception)
+        {
+            RenderActiveUsers(Array.Empty<LatrixActiveUser>());
+        }
+        finally
+        {
+            activeLoading = false;
+        }
+    }
+
     private void Render(IReadOnlyList<TelemetryPerson> users)
     {
         var ordered = users.OrderByDescending(user => user.TotalTokens).ToArray();
@@ -263,11 +297,9 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         var totalTokens = ordered.Sum(user => user.TotalTokens);
         var totalRequests = ordered.Sum(user => user.Requests);
         var totalErrors = ordered.Sum(user => user.Errors);
-        var activeUsers = ordered.Count(user => user.Online);
         var latencyUsers = ordered.Where(user => user.AverageLatencyMs > 0).ToArray();
         totalTokensValue.Text = FormatTokens(totalTokens);
         requestsValue.Text = totalRequests.ToString("N0", CultureInfo.InvariantCulture);
-        activeValue.Text = activeUsers.ToString(CultureInfo.InvariantCulture);
         errorsValue.Text = totalErrors.ToString("N0", CultureInfo.InvariantCulture);
         errorsValue.Foreground = new SolidColorBrush(totalErrors > 0 ? Error : TextPrimary);
         latencyValue.Text = latencyUsers.Length == 0 ? "--" : FormatLatency(latencyUsers.Average(user => user.AverageLatencyMs));
@@ -275,16 +307,15 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         errorsAccent.Background = new SolidColorBrush(totalErrors > 0 ? Error : TextMuted);
         latencyAccent.Background = new SolidColorBrush(latencyUsers.Any(user => user.AverageLatencyMs >= 15000) ? Warning : TextMuted);
 
-        onlineCountValue.Text = $"{activeUsers} people online";
-        RenderOnlineUsers(ordered.Where(user => user.Online));
         RenderRows();
     }
 
-    private void RenderOnlineUsers(IEnumerable<TelemetryPerson> users)
+    private void RenderActiveUsers(IReadOnlyList<LatrixActiveUser> users)
     {
         onlineCards.Children.Clear();
-        var onlineUsers = users.OrderByDescending(user => user.LastActiveUtc ?? DateTimeOffset.MinValue).ToArray();
-        if (onlineUsers.Length == 0)
+        activeValue.Text = users.Count.ToString(CultureInfo.InvariantCulture);
+        onlineCountValue.Text = $"{users.Count} people online";
+        if (users.Count == 0)
         {
             onlineCards.Children.Add(new TextBlock
             {
@@ -298,7 +329,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             return;
         }
 
-        for (var i = 0; i < onlineUsers.Length; i++)
+        for (var i = 0; i < users.Count; i++)
         {
             if (i > 0)
             {
@@ -309,13 +340,11 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
                     Margin = new Thickness(0, 0, 0, 10),
                 });
             }
-            var user = onlineUsers[i];
-            var model = SelectOnlineModel(user.Breakdown);
-            onlineCards.Children.Add(CreateOnlineUserCard(user, model));
+            onlineCards.Children.Add(CreateOnlineUserCard(users[i]));
         }
     }
 
-    private static UIElement CreateOnlineUserCard(TelemetryPerson user, TelemetryBreakdown model)
+    private static UIElement CreateOnlineUserCard(LatrixActiveUser user)
     {
         var row = new StackPanel();
 
@@ -341,14 +370,12 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         row.Children.Add(nameLine);
 
         var usageLine = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(13, 8, 0, 0) };
-        var modelText = string.IsNullOrWhiteSpace(model?.Model) ? "--" : model.Model;
-        usageLine.Children.Add(CreateUsageBadge(modelText, TextSecondary));
-        var effort = SelectOnlineEffort(model);
-        if (!string.IsNullOrWhiteSpace(effort))
-            usageLine.Children.Add(CreateUsageBadge(effort, Accent, new Thickness(5, 0, 0, 0)));
+        usageLine.Children.Add(CreateUsageBadge(string.IsNullOrWhiteSpace(user.Model) ? "-" : user.Model, TextSecondary));
+        if (!string.IsNullOrWhiteSpace(user.Effort))
+            usageLine.Children.Add(CreateUsageBadge(user.Effort, Accent, new Thickness(5, 0, 0, 0)));
         usageLine.Children.Add(new TextBlock
         {
-            Text = model == null ? "-- tokens" : $"{FormatTokens(model.TotalTokens)} tokens",
+            Text = FormatElapsed(user.ElapsedMs),
             Foreground = new SolidColorBrush(TextSecondary),
             FontSize = 10,
             Margin = new Thickness(8, 3, 0, 0),
@@ -357,17 +384,6 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
 
         return row;
     }
-
-    internal static TelemetryBreakdown SelectOnlineModel(IReadOnlyList<TelemetryBreakdown> breakdowns) =>
-        (breakdowns ?? Array.Empty<TelemetryBreakdown>())
-            .OrderByDescending(breakdown => breakdown.Requests)
-            .ThenByDescending(breakdown => breakdown.TotalTokens)
-            .FirstOrDefault();
-
-    internal static string SelectOnlineEffort(TelemetryBreakdown model) =>
-        model?.EffortItems?
-            .OrderByDescending(item => item.Requests)
-            .FirstOrDefault()?.Effort;
 
     private static Border CreateUsageBadge(string text, Color foreground, Thickness? margin = null)
     {
@@ -655,6 +671,14 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
 
     private static string FormatLatency(double milliseconds) =>
         $"{milliseconds / 1000:0.0}s";
+
+    private static string FormatElapsed(long milliseconds)
+    {
+        var seconds = Math.Max(0, milliseconds) / 1000;
+        return seconds < 60
+            ? $"{seconds}s"
+            : $"{seconds / 60}m {seconds % 60}s";
+    }
 
     private static string FormatTokens(long value)
     {

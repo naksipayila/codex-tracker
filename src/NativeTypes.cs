@@ -22,6 +22,9 @@ internal sealed record OnlineActiveModel(string Provider, string Model, long Del
 
 internal sealed record OnlineActivitySnapshot(OnlineActiveModel Model, DateTime DetectedAtUtc);
 
+internal sealed record LatrixActiveUser(string UserId, string Name, string Model, string Provider, string Effort,
+    long ElapsedMs);
+
 internal sealed record TelemetryPerson(
     string UserId,
     string Name,

@@ -19,6 +19,7 @@ internal static class Program
         {
             ("Latrix usage projection", ProjectLatrixUsage),
             ("Latrix telemetry projection", ProjectLatrixTelemetry),
+            ("Latrix active projection", ProjectLatrixActive),
             ("Latrix API authorization", AuthorizeLatrixApi),
             ("atomic settings persistence", PersistSettings),
             ("settings panel actions", TestSettingsPanelActions),
@@ -50,12 +51,15 @@ internal static class Program
 
     private static void AuthorizeLatrixApi()
     {
-        var requests = new List<(string Path, string Authorization)>();
+        var requests = new List<(string Path, string Authorization, bool NoCache, bool NoStore)>();
         var handler = new StubHttpMessageHandler(request =>
         {
-            requests.Add((request.RequestUri!.AbsolutePath, request.Headers.Authorization!.ToString()));
+            requests.Add((request.RequestUri!.AbsolutePath, request.Headers.Authorization!.ToString(),
+                request.Headers.CacheControl?.NoCache == true, request.Headers.CacheControl?.NoStore == true));
             var json = request.RequestUri!.AbsolutePath == "/api/window"
                 ? "{\"bucketPercent\":25,\"capacityPercent\":50,\"bucketPercentEstimated\":20,\"weeklyUsedPercent\":10}"
+                : request.RequestUri!.AbsolutePath == "/api/active"
+                    ? "{\"active\":[{\"userId\":\"u1\",\"name\":\"Ali\",\"model\":\"gpt-5.6-luna\",\"provider\":\"codex\",\"effort\":\"medium\",\"elapsedMs\":19000}]}"
                 : "{}";
             return new HttpResponseMessage(HttpStatusCode.OK)
             {
@@ -66,35 +70,49 @@ internal static class Program
         var client = new LatrixApiClient(http);
         client.ValidateAsync("unit-test-key").GetAwaiter().GetResult();
         var display = client.ReadUsageAsync("unit-test-key", TimeZoneInfo.Utc).GetAwaiter().GetResult();
+        var active = client.ReadActiveAsync("unit-test-key").GetAwaiter().GetResult();
         Equal("40%", display.FiveHour, "Latrix authorized usage");
-        Equal(2, requests.Count, "Latrix request count");
+        Equal(3, requests.Count, "Latrix request count");
         Equal("/api/me", requests[0].Path, "Latrix validation path");
         Equal("/api/window", requests[1].Path, "Latrix usage path");
+        Equal("/api/active", requests[2].Path, "Latrix active path");
         Equal("Bearer unit-test-key", requests[0].Authorization, "Latrix validation authorization");
         Equal("Bearer unit-test-key", requests[1].Authorization, "Latrix usage authorization");
+        Equal("Bearer unit-test-key", requests[2].Authorization, "Latrix active authorization");
+        Equal(true, requests[2].NoCache, "Latrix active no-cache request");
+        Equal(true, requests[2].NoStore, "Latrix active no-store request");
+        Equal("medium", active[0].Effort, "Latrix active effort");
     }
 
     private static void ProjectLatrixTelemetry()
     {
         using var document = JsonDocument.Parse("""
-            {"users":[{"userId":"u1","name":"Ali Taha Yapışkan","role":"ADMIN","online":true,"requests":12,"inputTokens":1000000,"cachedTokens":250000,"outputTokens":50000,"reasoningTokens":12500,"totalTokens":1062500,"models":2,"errors":1,"avgLatencyMs":13100,"lastActive":"2026-07-17T10:00:00Z","breakdown":[{"model":"gpt-5","totalTokens":900000,"requests":10,"efforts":[{"effort":"high","requests":4}]}]},{"userId":"u2","name":"Latrix","role":"ADMIN","online":false,"requests":0,"inputTokens":null,"cachedTokens":null,"outputTokens":null,"reasoningTokens":null,"totalTokens":null,"models":null,"errors":null,"avgLatencyMs":null,"lastActive":null,"breakdown":null}]}
+            {"users":[{"userId":"u1","name":"Ali Taha Yapışkan","role":"ADMIN","online":true,"requests":12,"inputTokens":1000000,"cachedTokens":250000,"outputTokens":50000,"reasoningTokens":12500,"totalTokens":1062500,"models":2,"errors":1,"avgLatencyMs":13100,"lastActive":"2026-07-17T10:00:00Z","breakdown":[{"model":"gpt-5","totalTokens":900000,"requests":10,"efforts":[{"effort":null,"requests":4}]}]},{"userId":"u2","name":"Latrix","role":"ADMIN","online":false,"requests":0,"inputTokens":null,"cachedTokens":null,"outputTokens":null,"reasoningTokens":null,"totalTokens":null,"models":null,"errors":null,"avgLatencyMs":null,"lastActive":null,"breakdown":null}]}
             """);
         var people = LatrixTelemetryParser.Project(document.RootElement);
         Equal(2, people.Count, "telemetry person count");
         Equal("Ali Taha Yapışkan", people[0].Name, "telemetry person name");
         Equal(1, people[0].Breakdown.Count, "telemetry breakdown count");
-        Equal("high: 4", people[0].Breakdown[0].Efforts, "telemetry effort summary");
-        var selectedModel = TelemetryPanel.SelectOnlineModel(new[]
-        {
-            new TelemetryBreakdown("openai", "token-heavy-model", 2_000_000, 4, "xhigh: 4",
-                new[] { new TelemetryEffort("xhigh", 4) }),
-            new TelemetryBreakdown("openai", "request-heavy-model", 1_000_000, 12, "medium: 8, high: 4",
-                new[] { new TelemetryEffort("medium", 8), new TelemetryEffort("high", 4) }),
-        });
-        Equal("request-heavy-model", selectedModel.Model, "online most-used model");
-        Equal("medium", TelemetryPanel.SelectOnlineEffort(selectedModel), "online most-used reasoning effort");
+        Equal("default: 4", people[0].Breakdown[0].Efforts, "telemetry default effort summary");
         Equal(0L, people[1].TotalTokens, "null telemetry total");
         Equal("", people[1].LastActive, "null telemetry last active");
+    }
+
+    private static void ProjectLatrixActive()
+    {
+        using var document = JsonDocument.Parse("""
+            {"active":[{"userId":"u1","name":"Ali Taha Yapışkan","model":"gpt-5.6-luna","provider":"codex","effort":"medium","elapsedMs":19000},{"userId":"u2","name":"Latrix","model":null,"provider":"self_hosted","effort":null,"elapsedMs":61000}]}
+            """);
+        var active = LatrixActiveParser.Project(document.RootElement);
+        Equal(2, active.Count, "active user count");
+        Equal("Ali Taha Yapışkan", active[0].Name, "active user name");
+        Equal("gpt-5.6-luna", active[0].Model, "active model");
+        Equal("codex", active[0].Provider, "active provider");
+        Equal("medium", active[0].Effort, "active effort");
+        Equal(19000L, active[0].ElapsedMs, "active elapsed time");
+        Equal("", active[1].Model, "null active model");
+        Equal("self-hosted", active[1].Provider, "self-hosted provider");
+        Equal("", active[1].Effort, "null active effort");
     }
 
     private static void PersistSettings()
@@ -382,27 +400,23 @@ internal static class Program
 
         widget.UpdateOnlineUsers(new[]
         {
-            CreateTelemetryPerson("u1", "Ali Taha Yapışkan", true),
-            CreateTelemetryPerson("u2", "Latrix", false),
-            CreateTelemetryPerson("u3", "Zeynep", true),
+            new LatrixActiveUser("u1", "Ali Taha Yapışkan", "gpt-5.6-luna", "codex", "medium", 1000),
+            new LatrixActiveUser("u2", "Zeynep", "gpt-5.6-luna", "codex", "medium", 1000),
+            new LatrixActiveUser("u3", "Zeynep", "gpt-5.6-luna", "codex", "medium", 1000),
         });
         Equal("2", onlineCount.Text, "online user count");
-        var tooltip = (Border)onlineCount.ToolTip;
-        Equal(Theme.Elevated, ((SolidColorBrush)tooltip.Background).Color, "online tooltip background");
-        Equal(Theme.TextPrimary, ((SolidColorBrush)((TextBlock)tooltip.Child).Foreground).Color, "online tooltip text color");
-        Equal("2 kişi online\r\nAli Taha Yapışkan\r\nZeynep", ((TextBlock)tooltip.Child).Text, "online user tooltip");
+        var tooltip = (ToolTip)onlineCount.ToolTip;
+        Equal(Theme.TextPrimary, ((SolidColorBrush)((TextBlock)tooltip.Content).Foreground).Color, "online tooltip text color");
+        Equal("2 kişi online\r\nAli Taha Yapışkan\r\nZeynep", ((TextBlock)tooltip.Content).Text, "online user tooltip");
 
         widget.ClearOnlineUsers();
         Equal("--", onlineCount.Text, "unavailable online user count");
-        Equal("Online bilgisi alınamadı", ((TextBlock)((Border)onlineCount.ToolTip).Child).Text, "unavailable online tooltip");
+        Equal("Online bilgisi alınamadı", ((TextBlock)((ToolTip)onlineCount.ToolTip).Content).Text, "unavailable online tooltip");
 
         widget.SetMetricVisibility(false, false);
         Equal(Visibility.Collapsed, fiveHour.Visibility, "hidden all five-hour metric");
         Equal(Visibility.Collapsed, weekly.Visibility, "hidden all weekly metric");
     }
-
-    private static TelemetryPerson CreateTelemetryPerson(string userId, string name, bool online) =>
-        new(userId, name, "", online, 0, 0, 0, 0, 0, 0, 0, 0, 0, "", null, []);
 
     private static void Click(StackPanel body, string text)
     {

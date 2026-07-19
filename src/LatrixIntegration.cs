@@ -126,11 +126,24 @@ internal sealed class LatrixApiClient
         return LatrixTelemetryParser.Project(response);
     }
 
-    private async Task<JsonElement> GetJsonAsync(string path, string apiKey, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<LatrixActiveUser>> ReadActiveAsync(string apiKey,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await GetJsonAsync("api/active", apiKey, cancellationToken, true);
+        return LatrixActiveParser.Project(response);
+    }
+
+    private async Task<JsonElement> GetJsonAsync(string path, string apiKey, CancellationToken cancellationToken,
+        bool bypassCache = false)
     {
         if (string.IsNullOrWhiteSpace(apiKey)) throw new InvalidOperationException("A Latrix API key is required.");
         using var request = new HttpRequestMessage(HttpMethod.Get, path);
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
+        if (bypassCache)
+        {
+            request.Headers.CacheControl = new CacheControlHeaderValue { NoCache = true, NoStore = true };
+            request.Headers.Pragma.Add(new NameValueHeaderValue("no-cache"));
+        }
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(TimeSpan.FromSeconds(15));
         using var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, timeout.Token);
@@ -142,6 +155,34 @@ internal sealed class LatrixApiClient
         using var document = await JsonDocument.ParseAsync(stream, cancellationToken: timeout.Token);
         return document.RootElement.Clone();
     }
+}
+
+internal static class LatrixActiveParser
+{
+    public static IReadOnlyList<LatrixActiveUser> Project(JsonElement result)
+    {
+        if (!result.TryGetProperty("active", out var active) || active.ValueKind != JsonValueKind.Array)
+            throw new InvalidDataException("Latrix active response did not contain active users.");
+
+        var projected = new List<LatrixActiveUser>();
+        foreach (var user in active.EnumerateArray())
+        {
+            var provider = GetString(user, "provider", "");
+            projected.Add(new LatrixActiveUser(
+                GetString(user, "userId", ""), GetString(user, "name", "Unknown"),
+                GetString(user, "model", ""), provider == "self_hosted" ? "self-hosted" : "codex",
+                GetString(user, "effort", ""), GetLong(user, "elapsedMs")));
+        }
+        return projected;
+    }
+
+    private static string GetString(JsonElement value, string name, string fallback) =>
+        value.TryGetProperty(name, out var item) && item.ValueKind == JsonValueKind.String
+            ? item.GetString() ?? fallback : fallback;
+
+    private static long GetLong(JsonElement value, string name) =>
+        value.TryGetProperty(name, out var item) && item.ValueKind == JsonValueKind.Number &&
+        item.TryGetInt64(out var number) ? number : 0;
 }
 
 internal static class LatrixTelemetryParser
@@ -165,7 +206,8 @@ internal static class LatrixTelemetryParser
                     {
                         foreach (var effort in effortEntries.EnumerateArray())
                         {
-                            var name = GetString(effort, "effort", "-");
+                            // The dashboard represents the model default as a null effort.
+                            var name = GetString(effort, "effort", "default");
                             var requests = GetInt(effort, "requests");
                             efforts.Add($"{name}: {requests}");
                             effortItems.Add(new TelemetryEffort(name, requests));

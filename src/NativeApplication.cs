@@ -11,6 +11,7 @@ using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Threading;
 using System.Windows.Media.Animation;
+using System.Windows.Media;
 using MediaBrushes = System.Windows.Media.Brushes;
 
 namespace CodexUsageTray;
@@ -22,6 +23,8 @@ internal static class NativeApplication
 
     public static void Run(string applicationDirectory, bool isolated = false)
     {
+        // Avoid WPF render-thread failures on incompatible or remote display drivers.
+        RenderOptions.ProcessRenderMode = RenderMode.SoftwareOnly;
         var instanceSuffix = isolated ? "." + Environment.ProcessId : "";
         using var activationEvent = new EventWaitHandle(false, EventResetMode.AutoReset, ActivationEventName + instanceSuffix);
         using var mutex = new Mutex(true, MutexName + instanceSuffix, out var ownsMutex);
@@ -81,12 +84,14 @@ internal sealed class NativeAppController : IDisposable
     private readonly NativeSettings settings;
     private readonly UpdateService updates;
     private readonly LatrixApiClient latrix = new();
+    private readonly SemaphoreSlim activeRefreshGate = new(1, 1);
     private WidgetWindow widget;
     private SettingsPanelWindow settingsPanel;
     private TelemetryWindow telemetryWindow;
     private System.Windows.Forms.NotifyIcon tray;
     private Process pinHelper;
     private PeriodicTimer refreshTimer;
+    private PeriodicTimer activeRefreshTimer;
     private bool widgetHiddenByUser;
     private bool widgetHiddenForMetrics;
     private bool quitting;
@@ -112,8 +117,12 @@ internal sealed class NativeAppController : IDisposable
     public void Initialize()
     {
         widget = new WidgetWindow();
-        widget.Dragged += left => PositionWidget(left);
-        widget.DragCompleted += SaveWidgetPosition;
+        widget.Dragged += left => PositionWidget(left, false);
+        widget.DragCompleted += () =>
+        {
+            PositionWidget(widget.Left);
+            SaveWidgetPosition();
+        };
         widget.Closed += (_, _) => Quit();
         widget.SetMetricVisibility(settings.ShowFiveHour, settings.ShowWeekly);
         widget.SetUsageLabels("6H", "W");
@@ -171,6 +180,9 @@ internal sealed class NativeAppController : IDisposable
         _ = RefreshLatrixUsageAsync(lifetime.Token);
         refreshTimer = new PeriodicTimer(TimeSpan.FromSeconds(30));
         _ = RunRefreshTimerAsync(lifetime.Token);
+        _ = RefreshActiveUsersAsync(lifetime.Token);
+        activeRefreshTimer = new PeriodicTimer(TimeSpan.FromSeconds(4));
+        _ = RunActiveRefreshTimerAsync(lifetime.Token);
     }
 
     public void ShowWidget()
@@ -197,6 +209,18 @@ internal sealed class NativeAppController : IDisposable
         {
             while (await refreshTimer.WaitForNextTickAsync(cancellationToken))
                 await RefreshLatrixUsageAsync(cancellationToken);
+        }
+        catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async Task RunActiveRefreshTimerAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (await activeRefreshTimer.WaitForNextTickAsync(cancellationToken))
+                await RefreshActiveUsersAsync(cancellationToken);
         }
         catch (OperationCanceledException) when (lifetime.IsCancellationRequested)
         {
@@ -233,9 +257,35 @@ internal sealed class NativeAppController : IDisposable
                 _ = application.Dispatcher.BeginInvoke(() => widget.UpdateUsage(UsageDisplay.Empty));
             }
 
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch
+        {
+            _ = application.Dispatcher.BeginInvoke(() => widget.UpdateUsage(UsageDisplay.Empty));
+        }
+        finally
+        {
+            refreshGate.Release();
+        }
+    }
+
+    private async Task RefreshActiveUsersAsync(CancellationToken cancellationToken)
+    {
+        if (!await activeRefreshGate.WaitAsync(0, cancellationToken)) return;
+        try
+        {
+            var apiKey = OpenCodeConfig.LoadApiKey();
+            if (string.IsNullOrWhiteSpace(apiKey))
+            {
+                _ = application.Dispatcher.BeginInvoke(widget.ClearOnlineUsers);
+                return;
+            }
+
             try
             {
-                var users = await latrix.ReadTelemetryAsync(apiKey, 7, cancellationToken);
+                var users = await latrix.ReadActiveAsync(apiKey, cancellationToken);
                 _ = application.Dispatcher.BeginInvoke(() => widget.UpdateOnlineUsers(users));
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -252,11 +302,11 @@ internal sealed class NativeAppController : IDisposable
         }
         catch
         {
-            _ = application.Dispatcher.BeginInvoke(() => widget.UpdateUsage(UsageDisplay.Empty));
+            _ = application.Dispatcher.BeginInvoke(widget.ClearOnlineUsers);
         }
         finally
         {
-            refreshGate.Release();
+            activeRefreshGate.Release();
         }
     }
 
@@ -477,7 +527,7 @@ internal sealed class NativeAppController : IDisposable
         UpdateTray();
     }
 
-    private void PositionWidget(double? preferredLeft = null)
+    private void PositionWidget(double? preferredLeft = null, bool resolveTaskbarPlacement = true)
     {
         var screen = System.Windows.Forms.Screen.PrimaryScreen;
         if (screen == null) return;
@@ -512,7 +562,7 @@ internal sealed class NativeAppController : IDisposable
         var y = bounds.Bottom - taskbarSize + (taskbarSize - heightPixels) / 2;
         if (taskbarHorizontal && workArea.Top > bounds.Top)
             y = bounds.Top + (taskbarSize - heightPixels) / 2;
-        if (taskbarHorizontal)
+        if (taskbarHorizontal && resolveTaskbarPlacement)
         {
             var placement = NativeMethods.FindTaskbarWidgetPlacement(
                 requestedX,
@@ -527,17 +577,17 @@ internal sealed class NativeAppController : IDisposable
         }
         else if (taskbarVertical && workArea.Left > bounds.Left)
         {
-            widget.SetAvailableWidth(WidgetWindow.PreferredWidth);
+            if (resolveTaskbarPlacement) widget.SetAvailableWidth(WidgetWindow.PreferredWidth);
             x = workArea.Left;
             y = bounds.Top + (bounds.Height - heightPixels) * 3 / 10;
         }
         else if (taskbarVertical)
         {
-            widget.SetAvailableWidth(WidgetWindow.PreferredWidth);
+            if (resolveTaskbarPlacement) widget.SetAvailableWidth(WidgetWindow.PreferredWidth);
             x = workArea.Right - preferredWidthPixels;
             y = bounds.Top + (bounds.Height - heightPixels) * 3 / 10;
         }
-        else widget.SetAvailableWidth(WidgetWindow.PreferredWidth);
+        else if (resolveTaskbarPlacement) widget.SetAvailableWidth(WidgetWindow.PreferredWidth);
         widget.Left = x / scale;
         widget.Top = y / scale;
     }
@@ -657,6 +707,7 @@ internal sealed class NativeAppController : IDisposable
         quitting = true;
         lifetime.Cancel();
         refreshTimer?.Dispose();
+        activeRefreshTimer?.Dispose();
         telemetryWindow?.Close();
         StopPinning();
         var trayMenu = tray?.ContextMenuStrip;
@@ -685,9 +736,11 @@ internal sealed class NativeAppController : IDisposable
             tray = null;
         }
         lifetime.Dispose();
+        activeRefreshGate.Dispose();
         SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
         SystemEvents.PowerModeChanged -= OnPowerModeChanged;
         refreshTimer?.Dispose();
+        activeRefreshTimer?.Dispose();
         telemetryWindow?.Close();
     }
 }
