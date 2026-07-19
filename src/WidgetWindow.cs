@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -10,7 +12,8 @@ namespace CodexUsageTray;
 
 internal sealed class WidgetWindow : Window
 {
-    public const double PreferredWidth = 270;
+    // Keep enough room for both weekly reset text and the online count.
+    public const double PreferredWidth = 310;
     private static readonly System.Windows.Media.Effects.DropShadowEffect WidgetTextOutline = new()
     {
         BlurRadius = 2,
@@ -29,6 +32,7 @@ internal sealed class WidgetWindow : Window
     private readonly Grid weeklyMetric;
     private readonly Border divider;
     private readonly Grid usageGrid;
+    private readonly TextBlock onlineCount;
     private bool showFiveHour = true;
     private bool showWeekly = true;
     private double availableWidth = PreferredWidth;
@@ -54,6 +58,8 @@ internal sealed class WidgetWindow : Window
         UseLayoutRounding = true;
 
         var root = new Grid { Background = new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)) };
+        root.ColumnDefinitions.Add(new ColumnDefinition());
+        root.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         usageGrid = new Grid { Margin = new Thickness(4, 0, 4, 0), Cursor = Cursors.SizeAll };
         usageGrid.ColumnDefinitions.Add(new ColumnDefinition());
@@ -84,7 +90,24 @@ internal sealed class WidgetWindow : Window
         weeklyMetric = CreateMetric(weeklyLabel, weeklyValue, weeklyReset);
         Grid.SetColumn(weeklyMetric, 2);
         usageGrid.Children.Add(weeklyMetric);
+        Grid.SetColumn(usageGrid, 0);
         root.Children.Add(usageGrid);
+
+        onlineCount = new TextBlock
+        {
+            Text = "--",
+            Foreground = Theme.SuccessBrush,
+            FontFamily = Theme.FontFamilyValue,
+            FontSize = Theme.FontSizeBody,
+            FontWeight = Theme.FontWeightBold,
+            VerticalAlignment = VerticalAlignment.Center,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(4, 0, 8, 0),
+            ToolTip = CreateOnlineTooltip(Array.Empty<string>(), false),
+            Effect = WidgetTextOutline,
+        };
+        Grid.SetColumn(onlineCount, 1);
+        root.Children.Add(onlineCount);
 
         Content = root;
 
@@ -108,6 +131,26 @@ internal sealed class WidgetWindow : Window
         fiveHourReset.Text = usage.FiveHourReset;
         weeklyValue.Text = usage.Weekly;
         weeklyReset.Text = usage.WeeklyReset;
+    }
+
+    public void UpdateOnlineUsers(IReadOnlyList<TelemetryPerson> users)
+    {
+        var names = users
+            .Where(user => user.Online)
+            .Select(user => user.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(name => name, StringComparer.CurrentCultureIgnoreCase)
+            .ToArray();
+
+        onlineCount.Text = names.Length.ToString();
+        onlineCount.ToolTip = CreateOnlineTooltip(names, true);
+    }
+
+    public void ClearOnlineUsers()
+    {
+        onlineCount.Text = "--";
+        onlineCount.ToolTip = CreateOnlineTooltip(Array.Empty<string>(), false);
     }
 
     public void SetUsageLabels(string primaryLabel, string weeklyUsageLabel)
@@ -138,6 +181,7 @@ internal sealed class WidgetWindow : Window
         var showBothMetrics = showFiveHourMetric && showWeeklyMetric;
         var showLabels = width >= 180;
         var showResetTimes = width >= 250;
+        onlineCount.Visibility = width >= 80 ? Visibility.Visible : Visibility.Collapsed;
 
         fiveHourMetric.Visibility = showFiveHourMetric ? Visibility.Visible : Visibility.Collapsed;
         divider.Visibility = showBothMetrics ? Visibility.Visible : Visibility.Collapsed;
@@ -163,6 +207,28 @@ internal sealed class WidgetWindow : Window
         weeklyMetric.HorizontalAlignment = showBothMetrics ? HorizontalAlignment.Left : HorizontalAlignment.Center;
         usageGrid.Margin = new Thickness(8, 0, 0, 0);
         divider.Margin = new Thickness(0);
+    }
+
+    private static Border CreateOnlineTooltip(IReadOnlyList<string> names, bool available)
+    {
+        var lines = available && names.Count > 0
+            ? new[] { $"{names.Count} kişi online" }.Concat(names).ToArray()
+            : new[] { available ? "Şu anda online kişi yok" : "Online bilgisi alınamadı" };
+        return new Border
+        {
+            Background = Theme.ElevatedBrush,
+            BorderBrush = Theme.BorderBrush,
+            BorderThickness = new Thickness(1),
+            CornerRadius = Theme.RadiusSmall,
+            Padding = new Thickness(6, 4, 6, 4),
+            Child = new TextBlock
+            {
+                Text = string.Join(Environment.NewLine, lines),
+                FontFamily = Theme.FontFamilyValue,
+                FontSize = Theme.FontSizeSmall,
+                Foreground = Theme.TextPrimaryBrush,
+            },
+        };
     }
 
     public void Reveal(bool animate)

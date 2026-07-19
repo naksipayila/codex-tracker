@@ -11,13 +11,13 @@ internal sealed class TelemetryWindow : Window
     public TelemetryWindow(LatrixApiClient latrix, string apiKey)
     {
         Title = "Codex Tracker Telemetry";
-        Width = 1280;
-        Height = 760;
-        MinWidth = 1000;
-        MinHeight = 600;
+        Width = 1384;
+        Height = 1000;
+        MinWidth = 1120;
+        MinHeight = 720;
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
         ShowActivated = true;
-        Background = new SolidColorBrush(Color.FromRgb(0x0f, 0x0f, 0x0f));
+        Background = Theme.BgBrush;
         WindowStyle = WindowStyle.SingleBorderWindow;
         telemetry = new TelemetryPanel(latrix, apiKey);
         Content = telemetry;

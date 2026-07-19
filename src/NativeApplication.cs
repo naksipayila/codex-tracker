@@ -212,11 +212,40 @@ internal sealed class NativeAppController : IDisposable
             if (apiKey == null)
             {
                 _ = application.Dispatcher.BeginInvoke(() =>
-                    widget.UpdateUsage(UsageDisplay.Empty));
+                {
+                    widget.UpdateUsage(UsageDisplay.Empty);
+                    widget.ClearOnlineUsers();
+                });
                 return;
             }
-            var display = await latrix.ReadUsageAsync(apiKey, TimeZoneInfo.Local, cancellationToken);
-            _ = application.Dispatcher.BeginInvoke(() => widget.UpdateUsage(display));
+
+            try
+            {
+                var display = await latrix.ReadUsageAsync(apiKey, TimeZoneInfo.Local, cancellationToken);
+                _ = application.Dispatcher.BeginInvoke(() => widget.UpdateUsage(display));
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                _ = application.Dispatcher.BeginInvoke(() => widget.UpdateUsage(UsageDisplay.Empty));
+            }
+
+            try
+            {
+                var users = await latrix.ReadTelemetryAsync(apiKey, 7, cancellationToken);
+                _ = application.Dispatcher.BeginInvoke(() => widget.UpdateOnlineUsers(users));
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                _ = application.Dispatcher.BeginInvoke(widget.ClearOnlineUsers);
+            }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {

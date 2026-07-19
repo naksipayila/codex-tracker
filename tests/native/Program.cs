@@ -84,6 +84,15 @@ internal static class Program
         Equal("Ali Taha Yapışkan", people[0].Name, "telemetry person name");
         Equal(1, people[0].Breakdown.Count, "telemetry breakdown count");
         Equal("high: 4", people[0].Breakdown[0].Efforts, "telemetry effort summary");
+        var selectedModel = TelemetryPanel.SelectOnlineModel(new[]
+        {
+            new TelemetryBreakdown("openai", "token-heavy-model", 2_000_000, 4, "xhigh: 4",
+                new[] { new TelemetryEffort("xhigh", 4) }),
+            new TelemetryBreakdown("openai", "request-heavy-model", 1_000_000, 12, "medium: 8, high: 4",
+                new[] { new TelemetryEffort("medium", 8), new TelemetryEffort("high", 4) }),
+        });
+        Equal("request-heavy-model", selectedModel.Model, "online most-used model");
+        Equal("medium", TelemetryPanel.SelectOnlineEffort(selectedModel), "online most-used reasoning effort");
         Equal(0L, people[1].TotalTokens, "null telemetry total");
         Equal("", people[1].LastActive, "null telemetry last active");
     }
@@ -302,9 +311,12 @@ internal static class Program
         using var panel = new TelemetryPanel(new LatrixApiClient(), "");
         Equal(Color.FromRgb(0x0d, 0x0d, 0x0d), ((SolidColorBrush)panel.Background).Color, "telemetry dark gray canvas");
         var root = (Grid)panel.Content;
-        Equal(2, root.RowDefinitions.Count, "telemetry dashboard row count");
-        Equal(900d, panel.MinWidth, "telemetry dashboard minimum width");
-        var summary = (Grid)root.Children[0];
+        Equal(1, root.ColumnDefinitions.Count, "telemetry shell column count");
+        Equal(1, root.Children.Count, "telemetry shell child count");
+        Equal(1120d, panel.MinWidth, "telemetry dashboard minimum width");
+        var dashboard = (Grid)root.Children[0];
+        Equal(3, dashboard.RowDefinitions.Count, "telemetry dashboard row count");
+        var summary = (Grid)dashboard.Children[0];
         Equal(5, summary.ColumnDefinitions.Count, "telemetry summary column count");
         Equal(1, summary.RowDefinitions.Count, "telemetry summary row count");
         Equal(5, summary.Children.Count, "telemetry summary card children");
@@ -314,7 +326,7 @@ internal static class Program
         Equal(3, Grid.GetColumn(summary.Children[3]), "errors summary column");
         Equal(4, Grid.GetColumn(summary.Children[4]), "latency summary column");
 
-        var content = (Grid)root.Children[1];
+        var content = (Grid)dashboard.Children[1];
         Equal(3, content.ColumnDefinitions.Count, "telemetry content column count");
         Equal(2, content.Children.Count, "telemetry table and online panel");
         var leftContent = (Grid)content.Children[0];
@@ -333,8 +345,10 @@ internal static class Program
     private static void TestWidgetMetricVisibility()
     {
         var widget = new WidgetWindow();
-        Equal(270d, WidgetWindow.PreferredWidth, "taskbar widget preferred width");
-        var usageGrid = (Grid)((Grid)widget.Content).Children[0];
+        Equal(310d, WidgetWindow.PreferredWidth, "taskbar widget preferred width");
+        var root = (Grid)widget.Content;
+        var usageGrid = (Grid)root.Children[0];
+        var onlineCount = (TextBlock)root.Children[1];
         var fiveHour = (Grid)usageGrid.Children[0];
         var divider = (Border)usageGrid.Children[1];
         var weekly = (Grid)usageGrid.Children[2];
@@ -366,10 +380,29 @@ internal static class Program
         Equal(HorizontalAlignment.Left, fiveHour.HorizontalAlignment, "taskbar left group alignment");
         Equal(HorizontalAlignment.Left, weekly.HorizontalAlignment, "taskbar right group alignment");
 
+        widget.UpdateOnlineUsers(new[]
+        {
+            CreateTelemetryPerson("u1", "Ali Taha Yapışkan", true),
+            CreateTelemetryPerson("u2", "Latrix", false),
+            CreateTelemetryPerson("u3", "Zeynep", true),
+        });
+        Equal("2", onlineCount.Text, "online user count");
+        var tooltip = (Border)onlineCount.ToolTip;
+        Equal(Theme.Elevated, ((SolidColorBrush)tooltip.Background).Color, "online tooltip background");
+        Equal(Theme.TextPrimary, ((SolidColorBrush)((TextBlock)tooltip.Child).Foreground).Color, "online tooltip text color");
+        Equal("2 kişi online\r\nAli Taha Yapışkan\r\nZeynep", ((TextBlock)tooltip.Child).Text, "online user tooltip");
+
+        widget.ClearOnlineUsers();
+        Equal("--", onlineCount.Text, "unavailable online user count");
+        Equal("Online bilgisi alınamadı", ((TextBlock)((Border)onlineCount.ToolTip).Child).Text, "unavailable online tooltip");
+
         widget.SetMetricVisibility(false, false);
         Equal(Visibility.Collapsed, fiveHour.Visibility, "hidden all five-hour metric");
         Equal(Visibility.Collapsed, weekly.Visibility, "hidden all weekly metric");
     }
+
+    private static TelemetryPerson CreateTelemetryPerson(string userId, string name, bool online) =>
+        new(userId, name, "", online, 0, 0, 0, 0, 0, 0, 0, 0, 0, "", null, []);
 
     private static void Click(StackPanel body, string text)
     {
