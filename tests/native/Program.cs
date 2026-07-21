@@ -26,6 +26,7 @@ internal static class Program
             ("settings panel actions", TestSettingsPanelActions),
             ("update download progress", TestUpdateDownloadProgress),
             ("telemetry dashboard layout", TestTelemetryDashboardLayout),
+            ("telemetry member model details", TestTelemetryMemberModelDetails),
             ("widget metric visibility", TestWidgetMetricVisibility),
             ("taskbar widget placement", TestTaskbarWidgetPlacement),
         };
@@ -94,6 +95,7 @@ internal static class Program
         Equal(2, people.Count, "telemetry person count");
         Equal("Ali Taha Yapışkan", people[0].Name, "telemetry person name");
         Equal(1, people[0].Breakdown.Count, "telemetry breakdown count");
+        Equal("gpt-5", people[0].Breakdown[0].Model, "telemetry breakdown model");
         Equal("default: 4", people[0].Breakdown[0].Efforts, "telemetry default effort summary");
         Equal(0L, people[1].TotalTokens, "null telemetry total");
         Equal("", people[1].LastActive, "null telemetry last active");
@@ -373,6 +375,22 @@ internal static class Program
         Equal(1, onlineTitle.Children.Count, "online panel title has no count label");
         Equal("ONLINE NOW", ((TextBlock)((StackPanel)onlineTitle.Children[0]).Children[1]).Text, "online panel title");
         Equal(1, Grid.GetRow(onlineContent.Children[1]), "online cards row without subtitle");
+    }
+
+    private static void TestTelemetryMemberModelDetails()
+    {
+        var person = new TelemetryPerson(
+            "u1", "Ali Taha Yapışkan", "", false, 12, 1000, 0, 500, 250, 1750, 1, 0, 0,
+            "1h ago", null,
+            new[] { new TelemetryBreakdown("codex", "gpt-5", 1750, 12, "default: 4") });
+        var details = TelemetryPanel.CreatePersonDetails(person);
+        var content = (StackPanel)details.Child;
+        Equal("MODELS USED", ((TextBlock)content.Children[0]).Text, "member model details heading");
+        Equal(2, content.Children.Count, "member model details row count");
+        var modelLine = (Grid)content.Children[1];
+        var model = (StackPanel)modelLine.Children[0];
+        Equal("gpt-5", ((TextBlock)model.Children[0]).Text, "member model details model");
+        Equal("codex", ((TextBlock)model.Children[1]).Text, "member model details provider");
     }
 
     private static void TestWidgetMetricVisibility()

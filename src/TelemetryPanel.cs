@@ -47,6 +47,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
     private readonly List<Button> periodButtons = new();
     private IReadOnlyList<TelemetryPerson> currentUsers = Array.Empty<TelemetryPerson>();
     private IReadOnlySet<string> activeUserIds = new HashSet<string>(StringComparer.Ordinal);
+    private string selectedUserId;
     private int selectedDays = 7;
     private bool loading;
     private bool activeLoading;
@@ -448,9 +449,15 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         rows.Children.Clear();
         if (currentUsers.Any())
         {
+            if (selectedUserId != null && !currentUsers.Any(user => user.UserId == selectedUserId))
+                selectedUserId = null;
             for (var index = 0; index < currentUsers.Count; index++)
-                rows.Children.Add(CreatePersonRow(currentUsers[index], index,
-                    activeUserIds.Contains(currentUsers[index].UserId)));
+            {
+                var user = currentUsers[index];
+                rows.Children.Add(CreatePersonRow(user, index, activeUserIds.Contains(user.UserId)));
+                if (user.UserId == selectedUserId)
+                    rows.Children.Add(CreatePersonDetails(user));
+            }
         }
         else
         {
@@ -535,12 +542,102 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             online ? Success : TextSecondary, TextAlignment.Left);
         row.MouseEnter += (_, _) => row.Background = new SolidColorBrush(RowHover);
         row.MouseLeave += (_, _) => row.Background = new SolidColorBrush(baseColor);
-        return new Border
+        var container = new Border
         {
             BorderBrush = new SolidColorBrush(BgBorder),
             BorderThickness = new Thickness(0, 0, 0, 1),
             Child = row,
         };
+        container.Cursor = Cursors.Hand;
+        container.MouseLeftButtonUp += (_, args) =>
+        {
+            selectedUserId = selectedUserId == user.UserId ? null : user.UserId;
+            RenderRows();
+            args.Handled = true;
+        };
+        return container;
+    }
+
+    internal static Border CreatePersonDetails(TelemetryPerson user)
+    {
+        var content = new StackPanel { Margin = new Thickness(24, 12, 16, 14) };
+        content.Children.Add(new TextBlock
+        {
+            Text = "MODELS USED",
+            Foreground = new SolidColorBrush(TextSecondary),
+            FontSize = 10,
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 0, 0, 8),
+        });
+
+        var breakdown = (user.Breakdown ?? Array.Empty<TelemetryBreakdown>())
+            .OrderByDescending(item => item.Requests)
+            .ThenBy(item => item.Model, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (breakdown.Length == 0)
+        {
+            content.Children.Add(new TextBlock
+            {
+                Text = "No model usage for this period.",
+                Foreground = new SolidColorBrush(TextMuted),
+                FontSize = 11,
+            });
+        }
+        else
+        {
+            foreach (var item in breakdown)
+            {
+                var line = new Grid { MinHeight = 32, Margin = new Thickness(0, 0, 0, 5) };
+                line.ColumnDefinitions.Add(new ColumnDefinition());
+                line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+                line.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+                var model = new StackPanel();
+                model.Children.Add(new TextBlock
+                {
+                    Text = string.IsNullOrWhiteSpace(item.Model) ? "Unknown" : item.Model,
+                    Foreground = new SolidColorBrush(TextPrimary),
+                    FontSize = 11,
+                    FontWeight = FontWeights.SemiBold,
+                    TextTrimming = TextTrimming.CharacterEllipsis,
+                });
+                model.Children.Add(new TextBlock
+                {
+                    Text = string.IsNullOrWhiteSpace(item.Provider) ? "" : item.Provider,
+                    Foreground = new SolidColorBrush(TextMuted),
+                    FontSize = 9,
+                    Margin = new Thickness(0, 2, 0, 0),
+                });
+                Grid.SetColumn(model, 0);
+                line.Children.Add(model);
+                AddDetailValue(line, item.Requests.ToString("N0", CultureInfo.InvariantCulture), 1);
+                AddDetailValue(line, FormatTokens(item.TotalTokens), 2, Accent);
+                content.Children.Add(line);
+            }
+        }
+
+        return new Border
+        {
+            Background = new SolidColorBrush(BgElevated),
+            BorderBrush = new SolidColorBrush(BgBorder),
+            BorderThickness = new Thickness(0, 0, 0, 1),
+            Child = content,
+        };
+    }
+
+    private static void AddDetailValue(Grid line, string text, int column, Color? color = null)
+    {
+        var value = new TextBlock
+        {
+            Text = text,
+            Foreground = new SolidColorBrush(color ?? TextSecondary),
+            FontSize = 10,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(18, 0, 8, 0),
+            TextAlignment = TextAlignment.Right,
+        };
+        Grid.SetColumn(value, column);
+        line.Children.Add(value);
     }
 
     private static void AddCell(Grid row, UIElement element, int column)
