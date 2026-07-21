@@ -6,6 +6,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Text.Json;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -129,7 +130,7 @@ internal sealed class NativeAppController : IDisposable
 
         tray = new System.Windows.Forms.NotifyIcon
         {
-            Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath) ?? SystemIcons.Application,
+            Icon = CreateTrayIcon(),
             Text = "Codex Tracker",
             Visible = true,
         };
@@ -184,6 +185,31 @@ internal sealed class NativeAppController : IDisposable
         activeRefreshTimer = new PeriodicTimer(TimeSpan.FromSeconds(4));
         _ = RunActiveRefreshTimerAsync(lifetime.Token);
     }
+
+    private static Icon CreateTrayIcon()
+    {
+        using var source = Icon.ExtractAssociatedIcon(Environment.ProcessPath) ?? (Icon)SystemIcons.Application.Clone();
+        using var sourceBitmap = source.ToBitmap();
+        using var bitmap = new Bitmap(32, 32, System.Drawing.Imaging.PixelFormat.Format32bppArgb);
+        using (var graphics = Graphics.FromImage(bitmap))
+        {
+            graphics.Clear(System.Drawing.Color.Transparent);
+            graphics.DrawImage(sourceBitmap, new Rectangle(-2, -2, 36, 36));
+        }
+
+        var handle = bitmap.GetHicon();
+        try
+        {
+            return (Icon)Icon.FromHandle(handle).Clone();
+        }
+        finally
+        {
+            DestroyIcon(handle);
+        }
+    }
+
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool DestroyIcon(IntPtr handle);
 
     public void ShowWidget()
     {

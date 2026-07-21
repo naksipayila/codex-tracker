@@ -81,9 +81,9 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         dashboard.Children.Add(summary);
 
         var contentArea = new Grid { Margin = new Thickness(0, 0, 0, 0) };
-        contentArea.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(3.55, GridUnitType.Star) });
+        contentArea.ColumnDefinitions.Add(new ColumnDefinition());
         contentArea.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });
-        contentArea.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        contentArea.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var leftContent = new Grid();
         leftContent.RowDefinitions.Add(new RowDefinition());
 
@@ -251,17 +251,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
 
         var content = new Grid { Margin = new Thickness(18, 16, 18, 16) };
         content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        content.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         content.Children.Add(title);
-        var subtitle = new TextBlock
-        {
-            Text = "Most-used model by active user",
-            Foreground = new SolidColorBrush(TextMuted),
-            FontSize = 10,
-            Margin = new Thickness(0, 8, 0, 0),
-        };
-        Grid.SetRow(subtitle, 1);
-        content.Children.Add(subtitle);
         content.RowDefinitions.Add(new RowDefinition());
         var cardsScroll = new ScrollViewer
         {
@@ -271,7 +261,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             Margin = new Thickness(0, 14, 0, 0),
         };
         ConfigureScrollViewer(cardsScroll);
-        Grid.SetRow(cardsScroll, 2);
+        Grid.SetRow(cardsScroll, 1);
         content.Children.Add(cardsScroll);
 
         return new Border
@@ -280,6 +270,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             BorderBrush = new SolidColorBrush(BgBorder),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(10),
+            MinWidth = 220,
             Child = content,
         };
     }
@@ -376,18 +367,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         activeValue.Text = users.Count.ToString(CultureInfo.InvariantCulture);
         RenderRows();
         if (users.Count == 0)
-        {
-            onlineCards.Children.Add(new TextBlock
-            {
-                Text = "Waiting for identity...",
-                Foreground = new SolidColorBrush(TextSecondary),
-                FontSize = 12,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                TextAlignment = TextAlignment.Center,
-                Margin = new Thickness(0, 34, 0, 0),
-            });
             return;
-        }
 
         for (var i = 0; i < users.Count; i++)
         {

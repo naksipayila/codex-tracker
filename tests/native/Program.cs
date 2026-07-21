@@ -354,6 +354,8 @@ internal static class Program
 
         var content = (Grid)dashboard.Children[2];
         Equal(3, content.ColumnDefinitions.Count, "telemetry content column count");
+        if (!content.ColumnDefinitions[0].Width.IsStar || !content.ColumnDefinitions[2].Width.IsAuto)
+            throw new InvalidOperationException("telemetry online panel must size to content");
         Equal(2, content.Children.Count, "telemetry table and online panel");
         var leftContent = (Grid)content.Children[0];
         Equal(1, leftContent.RowDefinitions.Count, "telemetry left content row count");
@@ -363,10 +365,14 @@ internal static class Program
         Equal("TEAM MEMBER", ((TextBlock)header.Children[0]).Text, "telemetry table header");
         var online = (Border)content.Children[1];
         Equal(2, Grid.GetRowSpan(online), "online panel row span");
+        Equal(220d, online.MinWidth, "online panel empty-state minimum width");
         var onlineContent = (Grid)online.Child;
+        Equal(2, onlineContent.Children.Count, "online panel content children without helper text");
+        Equal(2, onlineContent.RowDefinitions.Count, "online panel rows without helper text");
         var onlineTitle = (Grid)onlineContent.Children[0];
         Equal(1, onlineTitle.Children.Count, "online panel title has no count label");
         Equal("ONLINE NOW", ((TextBlock)((StackPanel)onlineTitle.Children[0]).Children[1]).Text, "online panel title");
+        Equal(1, Grid.GetRow(onlineContent.Children[1]), "online cards row without subtitle");
     }
 
     private static void TestWidgetMetricVisibility()
