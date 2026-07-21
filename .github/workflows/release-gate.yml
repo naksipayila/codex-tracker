@@ -1,0 +1,42 @@
+name: Release gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: windows-2022
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.423"
+          global-json-file: global.json
+
+      - name: Verify .NET SDK
+        shell: cmd
+        run: dotnet run --project tools\CodexTracker.Tooling\CodexTracker.Tooling.csproj --configuration Release -- verify-sdk
+
+      - name: Run native and launcher checks
+        shell: cmd
+        run: dotnet run --project tools\CodexTracker.Tooling\CodexTracker.Tooling.csproj --configuration Release -- check
+
+      - name: Run updater fault-injection tests
+        shell: pwsh
+        run: |
+          .\tests\updater\Invoke-UpdaterTests.ps1 `
+            -SourceRoot $env:GITHUB_WORKSPACE `
+            -ScratchRoot (Join-Path $env:RUNNER_TEMP "codex-updater-tests")
+
+      - name: Assert clean checkout
+        shell: cmd
+        run: dotnet run --project tools\CodexTracker.Tooling\CodexTracker.Tooling.csproj --configuration Release -- verify-clean

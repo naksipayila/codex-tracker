@@ -1,0 +1,51 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Numeric release version, for example 1.0.1"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    runs-on: windows-2022
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.423"
+          global-json-file: global.json
+
+      - name: Verify .NET SDK
+        shell: cmd
+        run: dotnet run --project tools\CodexTracker.Tooling\CodexTracker.Tooling.csproj --configuration Release -- verify-sdk
+
+      - name: Verify source and build inputs
+        shell: cmd
+        run: dotnet run --project tools\CodexTracker.Tooling\CodexTracker.Tooling.csproj --configuration Release -- check
+
+      - name: Run updater fault-injection tests
+        shell: pwsh
+        run: |
+          .\tests\updater\Invoke-UpdaterTests.ps1 `
+            -SourceRoot $env:GITHUB_WORKSPACE `
+            -ScratchRoot (Join-Path $env:RUNNER_TEMP "codex-updater-tests")
+
+      - name: Create GitHub Release
+        shell: cmd
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          dotnet run --project tools\CodexTracker.Tooling\CodexTracker.Tooling.csproj --configuration Release -- release
