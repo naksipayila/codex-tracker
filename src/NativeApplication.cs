@@ -194,7 +194,7 @@ internal sealed class NativeAppController : IDisposable
         using (var graphics = Graphics.FromImage(bitmap))
         {
             graphics.Clear(System.Drawing.Color.Transparent);
-            graphics.DrawImage(sourceBitmap, new Rectangle(-2, -2, 36, 36));
+            graphics.DrawImage(sourceBitmap, new Rectangle(3, 3, 26, 26));
         }
 
         var handle = bitmap.GetHicon();

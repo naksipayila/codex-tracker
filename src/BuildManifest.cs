@@ -26,6 +26,7 @@ namespace CodexUsageTray
             "src/UpdateService.cs",
             "src/launcher/Program.cs",
             "src/launcher/build.ps1",
+            "src/launcher/flame-icon.svg",
             "src/launcher/icon.ico",
         };
 
@@ -48,6 +49,7 @@ namespace CodexUsageTray
             "src/UpdateService.cs",
             "src/launcher/Program.cs",
             "src/launcher/build.ps1",
+            "src/launcher/flame-icon.svg",
             "src/launcher/icon.ico",
         };
 
