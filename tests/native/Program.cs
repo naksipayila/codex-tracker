@@ -347,15 +347,31 @@ internal static class Program
         var dashboard = (Grid)root.Children[0];
         Equal(5, dashboard.RowDefinitions.Count, "telemetry dashboard row count");
         var periodSelector = (Grid)dashboard.Children[0];
+        var periodTitle = (TextBlock)periodSelector.Children[0];
+        Equal("Segoe UI", periodTitle.FontFamily.Source, "telemetry title font family");
+        Equal(FontWeights.SemiBold, periodTitle.FontWeight, "telemetry title font weight");
         var periodButtons = (StackPanel)periodSelector.Children[1];
         Equal(3, periodButtons.Children.Count, "telemetry period button count");
         Equal("Daily", ((Button)periodButtons.Children[0]).Content, "daily telemetry period");
         Equal("7 days", ((Button)periodButtons.Children[1]).Content, "weekly telemetry period");
         Equal("Monthly", ((Button)periodButtons.Children[2]).Content, "monthly telemetry period");
         foreach (Button button in periodButtons.Children)
+        {
             Equal(false, button.Style == null, "telemetry period button custom style");
+            Equal("Segoe UI", button.FontFamily.Source, "telemetry period button font family");
+            Equal(FontWeights.Medium, button.FontWeight, "telemetry period button font weight");
+        }
         var summary = (Grid)dashboard.Children[1];
-        var totalTokensDetail = (TextBlock)((StackPanel)((Grid)((Border)summary.Children[0]).Child).Children[2]).Children[2];
+        var summaryContent = (StackPanel)((Grid)((Border)summary.Children[0]).Child).Children[2];
+        var summaryLabel = (TextBlock)summaryContent.Children[0];
+        var summaryValue = (TextBlock)summaryContent.Children[1];
+        var totalTokensDetail = (TextBlock)summaryContent.Children[2];
+        Equal("Segoe UI", summaryLabel.FontFamily.Source, "telemetry summary label font family");
+        Equal(10d, summaryLabel.FontSize, "telemetry summary label font size");
+        Equal(FontWeights.Medium, summaryLabel.FontWeight, "telemetry summary label font weight");
+        Equal(22d, summaryValue.FontSize, "telemetry summary value font size");
+        Equal(FontWeights.SemiBold, summaryValue.FontWeight, "telemetry summary value font weight");
+        Equal(11d, totalTokensDetail.FontSize, "telemetry summary detail font size");
         Equal("Last 7 days", totalTokensDetail.Text, "weekly summary period label");
         ((Button)periodButtons.Children[0]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Equal("Today", totalTokensDetail.Text, "daily summary period label");
@@ -389,6 +405,7 @@ internal static class Program
         for (var index = 1; index < header.Children.Count; index++)
             Equal(TextAlignment.Right, ((TextBlock)header.Children[index]).TextAlignment,
                 $"telemetry numeric header alignment {index}");
+        Equal(FontWeights.Medium, ((TextBlock)header.Children[0]).FontWeight, "telemetry header font weight");
         Equal(TextAlignment.Right, ((TextBlock)header.Children[7]).TextAlignment, "telemetry last active header alignment");
         Equal(205d, header.ColumnDefinitions[0].Width.Value, "telemetry member column width");
         for (var index = 1; index < header.ColumnDefinitions.Count; index++)

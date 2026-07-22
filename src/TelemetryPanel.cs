@@ -44,6 +44,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
     private static Color Success => Theme.Success;
     private static Color RowHover => Color.FromRgb(0x2e, 0x2e, 0x2e);
     private static Color ScrollThumb => Theme.ScrollThumb;
+    private static readonly FontFamily UiFont = new("Segoe UI");
 
     private readonly LatrixApiClient latrix;
     private readonly string apiKey;
@@ -162,6 +163,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         selector.Children.Add(new TextBlock
         {
             Text = "TELEMETRY",
+            FontFamily = UiFont,
             Foreground = new SolidColorBrush(TextPrimary),
             FontSize = 16,
             FontWeight = FontWeights.SemiBold,
@@ -188,7 +190,9 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             Height = 30,
             Margin = new Thickness(5, 0, 0, 0),
             Padding = new Thickness(8, 0, 8, 0),
-            FontSize = 10,
+            FontFamily = UiFont,
+            FontSize = 11,
+            FontWeight = FontWeights.Medium,
             BorderThickness = new Thickness(1),
             Focusable = false,
             Style = CreatePeriodButtonStyle(),
@@ -309,8 +313,9 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         titleCopy.Children.Add(new TextBlock
         {
             Text = "ONLINE NOW",
+            FontFamily = UiFont,
             Foreground = new SolidColorBrush(Success),
-            FontSize = 11,
+            FontSize = 12,
             FontWeight = FontWeights.SemiBold,
         });
         title.Children.Add(titleCopy);
@@ -467,9 +472,10 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         nameLine.Children.Add(new TextBlock
         {
             Text = user.Name,
+            FontFamily = UiFont,
             Foreground = new SolidColorBrush(TextPrimary),
-            FontSize = 11,
-            FontWeight = FontWeights.SemiBold,
+            FontSize = 12,
+            FontWeight = FontWeights.Medium,
             VerticalAlignment = VerticalAlignment.Center,
             TextTrimming = TextTrimming.CharacterEllipsis,
         });
@@ -482,6 +488,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         usageLine.Children.Add(new TextBlock
         {
             Text = FormatElapsed(user.ElapsedMs),
+            FontFamily = UiFont,
             Foreground = new SolidColorBrush(TextSecondary),
             FontSize = 10,
             Margin = new Thickness(8, 3, 0, 0),
@@ -502,8 +509,10 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             Child = new TextBlock
             {
                 Text = text,
+                FontFamily = UiFont,
                 Foreground = new SolidColorBrush(foreground),
-                FontSize = 9,
+                FontSize = 10,
+                FontWeight = FontWeights.Medium,
                 TextTrimming = TextTrimming.CharacterEllipsis,
             },
         };
@@ -549,12 +558,13 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             var text = new TextBlock
             {
                 Text = values[i],
+                FontFamily = UiFont,
                 Margin = GetCellMargin(i),
                 VerticalAlignment = VerticalAlignment.Center,
                 HorizontalAlignment = HorizontalAlignment.Stretch,
                 TextAlignment = ColumnAlignments[i],
                 FontSize = 10,
-                FontWeight = FontWeights.SemiBold,
+                FontWeight = FontWeights.Medium,
                 Foreground = new SolidColorBrush(header ? TextSecondary : TextPrimary),
                 TextTrimming = TextTrimming.CharacterEllipsis,
             };
@@ -580,15 +590,17 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         nameLine.Children.Add(new TextBlock
         {
             Text = user.Name,
+            FontFamily = UiFont,
             Foreground = new SolidColorBrush(TextPrimary),
             FontSize = 12,
-            FontWeight = FontWeights.SemiBold,
+            FontWeight = FontWeights.Medium,
             TextTrimming = TextTrimming.CharacterEllipsis,
         });
         identity.Children.Add(nameLine);
         identity.Children.Add(new TextBlock
         {
             Text = online ? "Online" : FormatPresence(user.LastActive),
+            FontFamily = UiFont,
             Foreground = new SolidColorBrush(online ? Success : TextMuted),
             FontSize = 10,
             Margin = new Thickness(0, 3, 0, 0),
@@ -627,9 +639,10 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         content.Children.Add(new TextBlock
         {
             Text = "MODELS USED",
+            FontFamily = UiFont,
             Foreground = new SolidColorBrush(TextSecondary),
-            FontSize = 10,
-            FontWeight = FontWeights.SemiBold,
+            FontSize = 11,
+            FontWeight = FontWeights.Medium,
             Margin = new Thickness(0, 0, 0, 8),
         });
 
@@ -642,6 +655,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             content.Children.Add(new TextBlock
             {
                 Text = "No model usage for this period.",
+                FontFamily = UiFont,
                 Foreground = new SolidColorBrush(TextMuted),
                 FontSize = 11,
             });
@@ -659,16 +673,18 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
                 model.Children.Add(new TextBlock
                 {
                     Text = string.IsNullOrWhiteSpace(item.Model) ? "Unknown" : item.Model,
+                    FontFamily = UiFont,
                     Foreground = new SolidColorBrush(TextPrimary),
                     FontSize = 11,
-                    FontWeight = FontWeights.SemiBold,
+                    FontWeight = FontWeights.Medium,
                     TextTrimming = TextTrimming.CharacterEllipsis,
                 });
                 model.Children.Add(new TextBlock
                 {
                     Text = string.IsNullOrWhiteSpace(item.Provider) ? "" : item.Provider,
+                    FontFamily = UiFont,
                     Foreground = new SolidColorBrush(TextMuted),
-                    FontSize = 9,
+                    FontSize = 10,
                     Margin = new Thickness(0, 2, 0, 0),
                 });
                 Grid.SetColumn(model, 0);
@@ -693,6 +709,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         var value = new TextBlock
         {
             Text = text,
+            FontFamily = UiFont,
             Foreground = new SolidColorBrush(color ?? TextSecondary),
             FontSize = 10,
             VerticalAlignment = VerticalAlignment.Center,
@@ -720,7 +737,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             HorizontalAlignment = HorizontalAlignment.Stretch,
             TextAlignment = alignment ?? ColumnAlignments[column],
             FontSize = 11,
-            FontWeight = bold ? FontWeights.Bold : FontWeights.Normal,
+            FontWeight = bold ? FontWeights.SemiBold : FontWeights.Normal,
             Foreground = new SolidColorBrush(color ?? TextPrimary),
             TextTrimming = TextTrimming.CharacterEllipsis,
         }, column);
@@ -772,6 +789,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         return new TextBlock
         {
             Text = text,
+            FontFamily = UiFont,
             Foreground = new SolidColorBrush(TextPrimary),
             FontSize = 22,
             FontWeight = FontWeights.SemiBold,
@@ -788,16 +806,18 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         content.Children.Add(new TextBlock
         {
             Text = label,
+            FontFamily = UiFont,
             Foreground = new SolidColorBrush(TextMuted),
-            FontSize = 9,
-            FontWeight = FontWeights.SemiBold,
+            FontSize = 10,
+            FontWeight = FontWeights.Medium,
         });
         content.Children.Add(value);
         detailText = new TextBlock
         {
             Text = detail,
+            FontFamily = UiFont,
             Foreground = new SolidColorBrush(TextSecondary),
-            FontSize = 10,
+            FontSize = 11,
             Margin = new Thickness(0, 3, 0, 0),
         };
         content.Children.Add(detailText);
@@ -892,6 +912,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         return new TextBlock
         {
             Text = "No teammate activity in this period.",
+            FontFamily = UiFont,
             Foreground = new SolidColorBrush(TextSecondary),
             FontSize = 12,
             HorizontalAlignment = HorizontalAlignment.Center,

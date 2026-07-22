@@ -41,6 +41,7 @@ internal sealed class TelemetryGraphWindow : Window
         root.Children.Add(new TextBlock
         {
             Text = title.ToUpperInvariant(),
+            FontFamily = new FontFamily("Segoe UI"),
             Foreground = new SolidColorBrush(Theme.TextPrimary),
             FontSize = 18,
             FontWeight = FontWeights.SemiBold,
@@ -48,6 +49,7 @@ internal sealed class TelemetryGraphWindow : Window
         var subtitle = new TextBlock
         {
             Text = $"{period}  /  live snapshots collected while Codex Tracker is running",
+            FontFamily = new FontFamily("Segoe UI"),
             Foreground = new SolidColorBrush(Theme.TextSecondary),
             FontSize = 11,
         };
@@ -98,7 +100,7 @@ internal sealed class TelemetryGraphCanvas : FrameworkElement
         if (values.Length == 0)
         {
             DrawText(drawingContext, "Waiting for telemetry samples...", new Point(area.Left + 20, area.Top + 22),
-                Theme.TextSecondary, 12);
+                Theme.TextSecondary, 12, FontWeights.Normal);
             return;
         }
 
@@ -112,7 +114,8 @@ internal sealed class TelemetryGraphCanvas : FrameworkElement
             var y = plot.Top + i * plot.Height / 4;
             drawingContext.DrawLine(new Pen(new SolidColorBrush(Theme.Border), 1),
                 new Point(plot.Left, y), new Point(plot.Right, y));
-            DrawText(drawingContext, FormatValue(max - i * range / 4), new Point(area.Left + 12, y - 5), Theme.TextMuted, 10);
+            DrawText(drawingContext, FormatValue(max - i * range / 4), new Point(area.Left + 12, y - 5), Theme.TextMuted, 10,
+                FontWeights.Normal);
         }
         var points = values.Select((value, index) => new Point(
             values.Length == 1 ? plot.Left : plot.Left + index * plot.Width / (values.Length - 1),
@@ -128,11 +131,15 @@ internal sealed class TelemetryGraphCanvas : FrameworkElement
         for (var i = 1; i < points.Length; i++)
             drawingContext.DrawLine(new Pen(new SolidColorBrush(Theme.Accent), 2.5), points[i - 1], points[i]);
         drawingContext.DrawEllipse(new SolidColorBrush(Theme.Accent), new Pen(new SolidColorBrush(Theme.Surface), 2), points[^1], 5, 5);
-        DrawText(drawingContext, FormatValue(values[^1]), new Point(area.Left + 16, area.Top + 14), Theme.TextPrimary, 22);
-        DrawText(drawingContext, "CURRENT VALUE", new Point(area.Left + 16, area.Bottom - 36), Theme.TextMuted, 9);
-        DrawText(drawingContext, FormatTime(currentSnapshots[0].CapturedAtUtc), new Point(plot.Left, area.Bottom - 18), Theme.TextSecondary, 10);
+        DrawText(drawingContext, FormatValue(values[^1]), new Point(area.Left + 16, area.Top + 14), Theme.TextPrimary, 22,
+            FontWeights.SemiBold);
+        DrawText(drawingContext, "CURRENT VALUE", new Point(area.Left + 16, area.Bottom - 36), Theme.TextMuted, 10,
+            FontWeights.Medium);
+        DrawText(drawingContext, FormatTime(currentSnapshots[0].CapturedAtUtc), new Point(plot.Left, area.Bottom - 18), Theme.TextSecondary, 10,
+            FontWeights.Normal);
         var lastTime = FormatTime(currentSnapshots[^1].CapturedAtUtc);
-        DrawText(drawingContext, lastTime, new Point(plot.Right - 70, area.Bottom - 18), Theme.TextSecondary, 10);
+        DrawText(drawingContext, lastTime, new Point(plot.Right - 70, area.Bottom - 18), Theme.TextSecondary, 10,
+            FontWeights.Normal);
     }
 
     private static string FormatValue(double value) => value >= 1000
@@ -141,10 +148,12 @@ internal sealed class TelemetryGraphCanvas : FrameworkElement
 
     private static string FormatTime(DateTimeOffset value) => value.ToLocalTime().ToString("HH:mm", CultureInfo.CurrentCulture);
 
-    private static void DrawText(DrawingContext context, string text, Point origin, Color color, double size)
+    private static void DrawText(DrawingContext context, string text, Point origin, Color color, double size,
+        FontWeight weight)
     {
         var formatted = new FormattedText(text, CultureInfo.CurrentCulture, FlowDirection.LeftToRight,
-            new Typeface("Segoe UI"), size, new SolidColorBrush(color), 1);
+            new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, weight, FontStretches.Normal), size,
+            new SolidColorBrush(color), 1);
         context.DrawText(formatted, origin);
     }
 }
