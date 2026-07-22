@@ -16,7 +16,21 @@ namespace CodexUsageTray;
 internal sealed class TelemetryPanel : UserControl, IDisposable
 {
     private const double OnlinePanelWidth = 220;
-    private static readonly double[] ColumnWidths = { 205, 78, 82, 82, 92, 86, 62, 96 };
+    private const double MemberColumnWidth = 205;
+    private const int MetricColumnCount = 7;
+    private const double MetricColumnMinWidth = 88;
+    private const double TableMinWidth = MemberColumnWidth + MetricColumnCount * MetricColumnMinWidth;
+    private static readonly TextAlignment[] ColumnAlignments =
+    {
+        TextAlignment.Left,
+        TextAlignment.Right,
+        TextAlignment.Right,
+        TextAlignment.Right,
+        TextAlignment.Right,
+        TextAlignment.Right,
+        TextAlignment.Right,
+        TextAlignment.Right,
+    };
 
     private static Color BgCanvas => Theme.Background;
     private static Color BgSurface => Theme.Surface;
@@ -525,7 +539,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
     {
         var grid = new Grid
         {
-            MinWidth = ColumnWidths.Sum(),
+            MinWidth = TableMinWidth,
             Height = header ? 40 : 52,
             Background = new SolidColorBrush(header ? BgHeader : BgElevated),
         };
@@ -535,9 +549,10 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             var text = new TextBlock
             {
                 Text = values[i],
-                Margin = new Thickness(i == 0 ? 16 : 8, 0, 8, 0),
+                Margin = GetCellMargin(i),
                 VerticalAlignment = VerticalAlignment.Center,
-                TextAlignment = i == 0 ? TextAlignment.Left : TextAlignment.Right,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                TextAlignment = ColumnAlignments[i],
                 FontSize = 10,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = new SolidColorBrush(header ? TextSecondary : TextPrimary),
@@ -554,7 +569,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         var baseColor = index % 2 == 0 ? BgSurface : Color.FromRgb(0x18, 0x18, 0x18);
         var row = new Grid
         {
-            MinWidth = ColumnWidths.Sum(),
+            MinWidth = TableMinWidth,
             MinHeight = 52,
             Background = new SolidColorBrush(baseColor),
         };
@@ -695,14 +710,15 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
     }
 
     private static void AddCell(Grid row, string text, int column, bool bold = false, Color? color = null,
-        TextAlignment alignment = TextAlignment.Right)
+        TextAlignment? alignment = null)
     {
         AddCell(row, new TextBlock
         {
             Text = text,
-            Margin = new Thickness(8, 0, 8, 0),
+            Margin = GetCellMargin(column),
             VerticalAlignment = VerticalAlignment.Center,
-            TextAlignment = alignment,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            TextAlignment = alignment ?? ColumnAlignments[column],
             FontSize = 11,
             FontWeight = bold ? FontWeights.Bold : FontWeights.Normal,
             Foreground = new SolidColorBrush(color ?? TextPrimary),
@@ -710,15 +726,16 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         }, column);
     }
 
+    private static Thickness GetCellMargin(int column)
+    {
+        return new Thickness(column == 0 ? 16 : 8, 0, 8, 0);
+    }
+
     private static void AddColumns(Grid grid)
     {
-        for (var index = 0; index < ColumnWidths.Length; index++)
-        {
-            var width = index == ColumnWidths.Length - 1
-                ? new GridLength(1, GridUnitType.Star)
-                : new GridLength(ColumnWidths[index]);
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = width });
-        }
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(MemberColumnWidth) });
+        for (var index = 0; index < MetricColumnCount; index++)
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
     }
 
     private static void ConfigureScrollViewer(ScrollViewer scroll)

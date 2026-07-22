@@ -385,8 +385,17 @@ internal static class Program
         Equal("TEAM MEMBER", ((TextBlock)header.Children[0]).Text, "telemetry table header");
         Equal(8, header.Children.Count, "telemetry table column count without errors or latency");
         Equal("LAST ACTIVE", ((TextBlock)header.Children[7]).Text, "telemetry last active header");
+        Equal(TextAlignment.Left, ((TextBlock)header.Children[0]).TextAlignment, "telemetry member header alignment");
+        for (var index = 1; index < header.Children.Count; index++)
+            Equal(TextAlignment.Right, ((TextBlock)header.Children[index]).TextAlignment,
+                $"telemetry numeric header alignment {index}");
         Equal(TextAlignment.Right, ((TextBlock)header.Children[7]).TextAlignment, "telemetry last active header alignment");
-        Equal(true, header.ColumnDefinitions[7].Width.IsStar, "last active fills table width");
+        Equal(205d, header.ColumnDefinitions[0].Width.Value, "telemetry member column width");
+        for (var index = 1; index < header.ColumnDefinitions.Count; index++)
+        {
+            Equal(true, header.ColumnDefinitions[index].Width.IsStar, $"telemetry metric column star width {index}");
+            Equal(1d, header.ColumnDefinitions[index].Width.Value, $"telemetry metric column equal width {index}");
+        }
         var online = (Border)content.Children[1];
         Equal(2, Grid.GetRowSpan(online), "online panel row span");
         Equal(220d, online.MinWidth, "online panel empty-state minimum width");
