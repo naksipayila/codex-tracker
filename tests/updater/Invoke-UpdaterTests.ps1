@@ -31,6 +31,7 @@ $script:BuildInputs = @(
     "src/NativeMethods.cs",
     "src/WidgetWindow.cs",
     "src/TelemetryPanel.cs",
+    "src/TelemetryGraphWindow.cs",
     "src/TelemetryWindow.cs",
     "src/Theme.cs",
     "src/NativeTypes.cs",
