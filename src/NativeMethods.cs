@@ -17,6 +17,9 @@ internal static class NativeMethods
     public const long WsExNoActivate = 0x08000000L;
     public const int WmMouseActivate = 0x0021;
     public const int MaNoActivate = 3;
+    private const int DwmwaUseImmersiveDarkMode = 20;
+    private const int DwmwaCaptionColor = 35;
+    private const int DwmwaTextColor = 36;
 
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")]
     private static extern IntPtr GetWindowLongPtr64(IntPtr window, int index);
@@ -36,6 +39,14 @@ internal static class NativeMethods
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     private static extern IntPtr FindWindow(string className, string windowName);
 
+    [DllImport("dwmapi.dll")]
+    private static extern int DwmSetWindowAttribute(
+        IntPtr window,
+        int attribute,
+        ref int value,
+        int valueSize
+    );
+
     public static IntPtr GetWindowLongPtr(IntPtr window, int index)
     {
         return IntPtr.Size == 8 ? GetWindowLongPtr64(window, index) : new IntPtr(GetWindowLong32(window, index));
@@ -46,6 +57,24 @@ internal static class NativeMethods
         if (IntPtr.Size == 8) SetWindowLongPtr64(window, index, value);
         else SetWindowLong32(window, index, value.ToInt32());
     }
+
+    public static void ApplyDarkTitleBar(Window window)
+    {
+        var handle = new WindowInteropHelper(window).Handle;
+        if (handle == IntPtr.Zero) return;
+
+        var darkMode = 1;
+        _ = DwmSetWindowAttribute(handle, DwmwaUseImmersiveDarkMode, ref darkMode, sizeof(int));
+
+        var captionColor = ToColorRef(Theme.Background);
+        _ = DwmSetWindowAttribute(handle, DwmwaCaptionColor, ref captionColor, sizeof(int));
+
+        var textColor = ToColorRef(Theme.TextPrimary);
+        _ = DwmSetWindowAttribute(handle, DwmwaTextColor, ref textColor, sizeof(int));
+    }
+
+    private static int ToColorRef(System.Windows.Media.Color color) =>
+        color.R | (color.G << 8) | (color.B << 16);
 
     public static double GetScaleForWindow(Window window)
     {

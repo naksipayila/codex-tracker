@@ -187,17 +187,18 @@ internal static class Program
         bool? hideInFullscreen = null;
         bool? showFiveHour = null;
         bool? showWeekly = null;
-            var panel = new SettingsPanelWindow(
+        var panel = new SettingsPanelWindow(
             true,
             false,
             true,
             true,
             false,
-             true,
-              () => toggleWidget += 1,
-              () => openDashboard += 1,
-              () => openTelemetry += 1,
-              () => repairUpdate += 1,
+            "1.0.31",
+            true,
+            () => toggleWidget += 1,
+            () => openDashboard += 1,
+            () => openTelemetry += 1,
+            () => repairUpdate += 1,
             value => launchAtStartup = value,
             value => hideInFullscreen = value,
             value => showFiveHour = value,
@@ -209,11 +210,16 @@ internal static class Program
         var root = (Border)panel.Content;
         Equal(12d, root.CornerRadius.TopLeft, "settings panel corner radius");
         Equal(Color.FromRgb(0x14, 0x14, 0x14), ((SolidColorBrush)root.Background).Color, "settings panel dark gray background");
-        Equal("QUICK ACTIONS", ((TextBlock)body.Children[0]).Text, "settings first section label");
+        Equal("QUICK ACTIONS", ((TextBlock)body.Children[1]).Text, "settings first section label");
         Equal("QUICK ACTIONS|PREFERENCES",
             string.Join("|", body.Children.OfType<TextBlock>()
                 .Where(text => text.Text == text.Text.ToUpperInvariant())
                 .Select(text => text.Text)), "settings section labels");
+        var updateAction = FindControls<Button>(body).Single(button => button.Content as string == "Check for updates");
+        Equal(Theme.Accent, ((SolidColorBrush)updateAction.Foreground).Color, "settings update action color");
+        var version = body.Children.OfType<StackPanel>().Single(stack =>
+            FindControls<Button>(stack).Any(button => button.Content as string == "Check for updates"));
+        Equal("Version: 1.0.31", version.Children.OfType<TextBlock>().Single().Text, "settings current version");
         var separators = body.Children.OfType<Border>().Where(border => border.Height == 1).ToArray();
         Equal(1, separators.Length, "settings section separators");
         foreach (var separator in separators)
@@ -225,10 +231,11 @@ internal static class Program
         Click(body, "Open Latrix usage dashboard");
         Click(body, "Open telemetry window");
         Click(body, "Repair update");
+        Click(body, "Check for updates");
         Equal(1, toggleWidget, "hide widget action");
         Equal(1, openDashboard, "dashboard action");
         Equal(1, openTelemetry, "telemetry action");
-        Equal(1, repairUpdate, "repair action");
+        Equal(2, repairUpdate, "repair and update actions");
         if (FindControls<Button>(body).Any(button =>
             (button.Content as string)?.Contains("Codex", StringComparison.OrdinalIgnoreCase) == true))
             throw new InvalidOperationException("The settings panel still exposes a Codex action.");
@@ -255,11 +262,12 @@ internal static class Program
             false,
             true,
             true,
+            "1.0.31",
             false,
-             () => showWidget += 1,
-             () => { },
-             () => { },
-             () => { },
+            () => showWidget += 1,
+            () => { },
+            () => { },
+            () => { },
             _ => { },
             _ => { },
             _ => { },

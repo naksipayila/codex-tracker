@@ -30,6 +30,7 @@ internal sealed class TelemetryGraphWindow : Window
         MinHeight = 380;
         Background = new SolidColorBrush(Theme.Background);
         WindowStartupLocation = WindowStartupLocation.CenterScreen;
+        SourceInitialized += (_, _) => NativeMethods.ApplyDarkTitleBar(this);
 
         var root = new Grid { Margin = new Thickness(26) };
         root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
@@ -66,6 +67,8 @@ internal sealed class TelemetryGraphWindow : Window
 
 internal sealed class TelemetryGraphCanvas : FrameworkElement
 {
+    private const double PlotTopInset = 58;
+    private const double PlotBottomInset = 58;
     private readonly Func<IReadOnlyList<TelemetrySnapshot>> snapshots;
     private readonly Func<TelemetrySnapshot, double> selector;
 
@@ -102,13 +105,14 @@ internal sealed class TelemetryGraphCanvas : FrameworkElement
         var min = values.Min();
         var max = values.Max();
         var range = Math.Max(1, max - min);
-        var plot = new Rect(area.Left + 54, area.Top + 30, Math.Max(1, area.Width - 72), Math.Max(1, area.Height - 72));
+        var plot = new Rect(area.Left + 54, area.Top + PlotTopInset, Math.Max(1, area.Width - 72),
+            Math.Max(1, area.Height - PlotTopInset - PlotBottomInset));
         for (var i = 0; i <= 4; i++)
         {
             var y = plot.Top + i * plot.Height / 4;
             drawingContext.DrawLine(new Pen(new SolidColorBrush(Theme.Border), 1),
                 new Point(plot.Left, y), new Point(plot.Right, y));
-            DrawText(drawingContext, FormatValue(max - i * range / 4), new Point(area.Left + 12, y - 7), Theme.TextMuted, 10);
+            DrawText(drawingContext, FormatValue(max - i * range / 4), new Point(area.Left + 12, y - 5), Theme.TextMuted, 10);
         }
         var points = values.Select((value, index) => new Point(
             values.Length == 1 ? plot.Left : plot.Left + index * plot.Width / (values.Length - 1),
@@ -125,10 +129,10 @@ internal sealed class TelemetryGraphCanvas : FrameworkElement
             drawingContext.DrawLine(new Pen(new SolidColorBrush(Theme.Accent), 2.5), points[i - 1], points[i]);
         drawingContext.DrawEllipse(new SolidColorBrush(Theme.Accent), new Pen(new SolidColorBrush(Theme.Surface), 2), points[^1], 5, 5);
         DrawText(drawingContext, FormatValue(values[^1]), new Point(area.Left + 16, area.Top + 14), Theme.TextPrimary, 22);
-        DrawText(drawingContext, "CURRENT VALUE", new Point(area.Left + 16, area.Bottom - 24), Theme.TextMuted, 9);
-        DrawText(drawingContext, FormatTime(currentSnapshots[0].CapturedAtUtc), new Point(plot.Left, area.Bottom - 24), Theme.TextSecondary, 10);
+        DrawText(drawingContext, "CURRENT VALUE", new Point(area.Left + 16, area.Bottom - 36), Theme.TextMuted, 9);
+        DrawText(drawingContext, FormatTime(currentSnapshots[0].CapturedAtUtc), new Point(plot.Left, area.Bottom - 18), Theme.TextSecondary, 10);
         var lastTime = FormatTime(currentSnapshots[^1].CapturedAtUtc);
-        DrawText(drawingContext, lastTime, new Point(plot.Right - 70, area.Bottom - 24), Theme.TextSecondary, 10);
+        DrawText(drawingContext, lastTime, new Point(plot.Right - 70, area.Bottom - 18), Theme.TextSecondary, 10);
     }
 
     private static string FormatValue(double value) => value >= 1000

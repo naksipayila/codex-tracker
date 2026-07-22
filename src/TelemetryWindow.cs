@@ -18,6 +18,7 @@ internal sealed class TelemetryWindow : Window
         ShowActivated = true;
         Background = Theme.BgBrush;
         WindowStyle = WindowStyle.SingleBorderWindow;
+        SourceInitialized += (_, _) => NativeMethods.ApplyDarkTitleBar(this);
         telemetry = new TelemetryPanel(latrix, apiKey);
         Content = telemetry;
         Closed += (_, _) => telemetry.Dispose();

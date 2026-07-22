@@ -371,6 +371,7 @@ internal sealed class NativeAppController : IDisposable
                 settings.HideInFullscreen,
                 settings.ShowFiveHour,
                  settings.ShowWeekly,
+                 typeof(NativeAppController).Assembly.GetName().Version?.ToString(3) ?? "unknown",
                  updates.RepairNeeded && !updates.IsChecking,
                  () =>
                 {
@@ -782,6 +783,7 @@ internal sealed class SettingsPanelWindow : Window
         bool hideInFullscreen,
         bool showFiveHour,
         bool showWeekly,
+        string currentVersion,
         bool canRepair,
         Action toggleWidget,
         Action openDashboard,
@@ -808,6 +810,23 @@ internal sealed class SettingsPanelWindow : Window
 
         var body = new StackPanel { Width = 356 };
 
+        var updateInfo = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(0, 0, 0, 12),
+        };
+        updateInfo.Children.Add(CreateTextAction("Check for updates", checkUpdate));
+        updateInfo.Children.Add(new TextBlock
+        {
+            Text = "Version: " + currentVersion,
+            Foreground = Theme.TextMutedBrush,
+            FontFamily = Theme.FontFamilyValue,
+            FontSize = Theme.FontSizeSmall,
+            VerticalAlignment = VerticalAlignment.Center,
+            Margin = new Thickness(10, 0, 0, 0),
+        });
+        body.Children.Add(updateInfo);
         body.Children.Add(CreateSectionLabel("Quick actions"));
         var quickActions = new StackPanel();
         quickActions.Children.Add(CreateButton(widgetVisible ? "Hide widget" : "Show widget", toggleWidget));
@@ -820,7 +839,6 @@ internal sealed class SettingsPanelWindow : Window
 
         body.Children.Add(CreateSectionLabel("Preferences"));
         var prefs = new StackPanel();
-        prefs.Children.Add(CreateButton("Check for updates now", checkUpdate, true));
         prefs.Children.Add(CreateToggle("Launch at Windows startup", launchAtStartup, setLaunchAtStartup));
         prefs.Children.Add(CreateToggle("Hide in fullscreen apps", hideInFullscreen, setHideInFullscreen));
         prefs.Children.Add(CreateToggle("Show 6H usage", showFiveHour, setShowFiveHour));
@@ -968,6 +986,36 @@ internal sealed class SettingsPanelWindow : Window
             FontWeight = Theme.FontWeightSemibold,
             Margin = new Thickness(2, 0, 0, 7),
         };
+    }
+
+    private static Button CreateTextAction(string text, Action action)
+    {
+        var button = new Button
+        {
+            Content = text,
+            Background = MediaBrushes.Transparent,
+            BorderBrush = MediaBrushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Padding = new Thickness(0),
+            Foreground = Theme.AccentBrush,
+            FontFamily = Theme.FontFamilyValue,
+            FontSize = Theme.FontSizeSmall,
+            Cursor = System.Windows.Input.Cursors.Hand,
+            FocusVisualStyle = null,
+        };
+        var template = new ControlTemplate(typeof(Button));
+        var content = new FrameworkElementFactory(typeof(ContentPresenter));
+        content.SetValue(ContentPresenter.ContentProperty, new TemplateBindingExtension(ContentControl.ContentProperty));
+        template.VisualTree = content;
+        var style = new Style(typeof(Button));
+        style.Setters.Add(new Setter(Control.TemplateProperty, template));
+        style.Setters.Add(new Setter(Control.ForegroundProperty, Theme.AccentBrush));
+        var hoverTrigger = new Trigger { Property = Button.IsMouseOverProperty, Value = true };
+        hoverTrigger.Setters.Add(new Setter(Control.ForegroundProperty, Theme.AccentHoverBrush));
+        style.Triggers.Add(hoverTrigger);
+        button.Style = style;
+        button.Click += (_, _) => action();
+        return button;
     }
 
     private static CheckBox CreateToggle(string text, bool value, Action<bool> changed)
