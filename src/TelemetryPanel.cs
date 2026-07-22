@@ -38,6 +38,10 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
     private readonly TextBlock totalTokensValue;
     private readonly TextBlock requestsValue;
     private readonly TextBlock activeValue;
+    private readonly TextBlock periodSummaryDetail;
+    private readonly Canvas totalTokensSparkline;
+    private readonly Canvas requestsSparkline;
+    private readonly Canvas activeSparkline;
     private readonly StackPanel onlineCards;
     private readonly List<Button> periodButtons = new();
     private IReadOnlyList<TelemetryPerson> currentUsers = Array.Empty<TelemetryPerson>();
@@ -46,6 +50,10 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
     private int selectedDays = 7;
     private bool loading;
     private bool activeLoading;
+    private long latestTotalTokens;
+    private int latestRequests;
+    private int latestActiveUsers;
+    private readonly List<TelemetrySnapshot> snapshots = new();
 
     public TelemetryPanel(LatrixApiClient latrix, string apiKey)
     {
@@ -71,7 +79,8 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         Grid.SetRow(periodSelector, 0);
         dashboard.Children.Add(periodSelector);
 
-        var summary = CreateSummary(out totalTokensValue, out requestsValue, out activeValue);
+        var summary = CreateSummary(out totalTokensValue, out requestsValue, out activeValue,
+            out periodSummaryDetail, out totalTokensSparkline, out requestsSparkline, out activeSparkline);
         Grid.SetRow(summary, 2);
         dashboard.Children.Add(summary);
 
@@ -168,11 +177,15 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             FontSize = 10,
             BorderThickness = new Thickness(1),
             Focusable = false,
+            Style = CreatePeriodButtonStyle(),
         };
+        button.MouseEnter += (_, _) => UpdatePeriodButtonStyles();
+        button.MouseLeave += (_, _) => UpdatePeriodButtonStyles();
         button.Click += (_, _) =>
         {
             selectedDays = days;
             UpdatePeriodButtonStyles();
+            periodSummaryDetail.Text = GetPeriodSummary(days);
             _ = RefreshAsync();
         };
         periodButtons.Add(button);
@@ -184,13 +197,48 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         foreach (var button in periodButtons)
         {
             var selected = (int)button.Tag == selectedDays;
-            button.Background = new SolidColorBrush(selected ? Accent : BgSurface);
-            button.BorderBrush = new SolidColorBrush(selected ? Accent : BgBorder);
+            var hovered = button.IsMouseOver;
+            button.Background = new SolidColorBrush(hovered
+                ? selected ? Theme.AccentHover : Theme.ButtonHover
+                : selected ? Accent : BgSurface);
+            button.BorderBrush = new SolidColorBrush(hovered
+                ? selected ? Theme.AccentHover : Theme.ButtonBorderHover
+                : selected ? Accent : BgBorder);
             button.Foreground = new SolidColorBrush(selected ? BgCanvas : TextSecondary);
         }
     }
 
-    private Grid CreateSummary(out TextBlock totalTokensValue, out TextBlock requestsValue, out TextBlock activeValue)
+    private static Style CreatePeriodButtonStyle()
+    {
+        var template = new ControlTemplate(typeof(Button));
+        var border = new FrameworkElementFactory(typeof(Border));
+        border.SetValue(Border.CornerRadiusProperty, new CornerRadius(6));
+        border.SetValue(Border.BackgroundProperty, new TemplateBindingExtension(Control.BackgroundProperty));
+        border.SetValue(Border.BorderBrushProperty, new TemplateBindingExtension(Control.BorderBrushProperty));
+        border.SetValue(Border.BorderThicknessProperty, new TemplateBindingExtension(Control.BorderThicknessProperty));
+
+        var content = new FrameworkElementFactory(typeof(ContentPresenter));
+        content.SetValue(ContentPresenter.ContentProperty, new TemplateBindingExtension(ContentControl.ContentProperty));
+        content.SetValue(ContentPresenter.ContentTemplateProperty,
+            new TemplateBindingExtension(ContentControl.ContentTemplateProperty));
+        content.SetValue(ContentPresenter.ContentStringFormatProperty,
+            new TemplateBindingExtension(ContentControl.ContentStringFormatProperty));
+        content.SetValue(ContentPresenter.MarginProperty, new TemplateBindingExtension(Control.PaddingProperty));
+        content.SetValue(ContentPresenter.HorizontalAlignmentProperty,
+            new TemplateBindingExtension(Control.HorizontalContentAlignmentProperty));
+        content.SetValue(ContentPresenter.VerticalAlignmentProperty,
+            new TemplateBindingExtension(Control.VerticalContentAlignmentProperty));
+        border.AppendChild(content);
+        template.VisualTree = border;
+
+        var style = new Style(typeof(Button));
+        style.Setters.Add(new Setter(Control.TemplateProperty, template));
+        return style;
+    }
+
+    private Grid CreateSummary(out TextBlock totalTokensValue, out TextBlock requestsValue, out TextBlock activeValue,
+        out TextBlock periodSummaryDetail, out Canvas totalTokensSparkline, out Canvas requestsSparkline,
+        out Canvas activeSparkline)
     {
         var summary = new Grid { Margin = new Thickness(0, 0, 0, 18) };
         summary.ColumnDefinitions.Add(new ColumnDefinition());
@@ -202,13 +250,16 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         var totalTokens = CreateMetricValue("0");
         var requests = CreateMetricValue("0");
         var active = CreateMetricValue("0");
-        var totalTokensCard = CreateSummaryCard(0, 0, "TOTAL TOKENS", totalTokens, "Across this period", TextSecondary, out _);
+        var totalTokensCard = CreateSummaryCard(0, 0, "TOTAL TOKENS", totalTokens, GetPeriodSummary(selectedDays), TextSecondary,
+            "Total tokens", out _, out totalTokensSparkline, out periodSummaryDetail);
         totalTokensCard.Margin = new Thickness(0, 0, 9, 0);
         summary.Children.Add(totalTokensCard);
-        var requestsCard = CreateSummaryCard(1, 0, "REQUESTS", requests, "All team members", TextSecondary, out _);
+        var requestsCard = CreateSummaryCard(1, 0, "REQUESTS", requests, "All team members", TextSecondary,
+            "Requests", out _, out requestsSparkline, out _);
         requestsCard.Margin = new Thickness(9, 0, 0, 0);
         summary.Children.Add(requestsCard);
-        var activeCard = CreateSummaryCard(3, 0, "ACTIVE NOW", active, "Currently online", Success, out _);
+        var activeCard = CreateSummaryCard(3, 0, "ACTIVE NOW", active, "Currently online", Success,
+            "Active users", out _, out activeSparkline, out _);
         activeCard.Width = OnlinePanelWidth;
         activeCard.Margin = new Thickness(0);
         summary.Children.Add(activeCard);
@@ -217,6 +268,13 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         activeValue = active;
         return summary;
     }
+
+    private static string GetPeriodSummary(int days) => days switch
+    {
+        1 => "Today",
+        30 => "Last 30 days",
+        _ => $"Last {days} days",
+    };
 
 
 
@@ -340,6 +398,10 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         var totalRequests = ordered.Sum(user => user.Requests);
         totalTokensValue.Text = FormatTokens(totalTokens);
         requestsValue.Text = totalRequests.ToString("N0", CultureInfo.InvariantCulture);
+        latestTotalTokens = totalTokens;
+        latestRequests = totalRequests;
+        RecordSnapshot();
+        UpdateSparklines();
 
         RenderRows();
     }
@@ -352,6 +414,9 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             .Select(user => user.UserId)
             .ToHashSet(StringComparer.Ordinal);
         activeValue.Text = users.Count.ToString(CultureInfo.InvariantCulture);
+        latestActiveUsers = users.Count;
+        RecordSnapshot();
+        UpdateSparklines();
         RenderRows();
         if (users.Count == 0)
             return;
@@ -698,8 +763,9 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
 
 
 
-    private static Border CreateSummaryCard(int column, int row, string label, TextBlock value,
-        string detail, Color accent, out Border accentBar, int columnSpan = 1)
+    private Border CreateSummaryCard(int column, int row, string label, TextBlock value,
+        string detail, Color accent, string graphTitle, out Border accentBar, out Canvas sparkline,
+        out TextBlock detailText, int columnSpan = 1)
     {
         var content = new StackPanel { Margin = new Thickness(16, 14, 12, 12) };
         content.Children.Add(new TextBlock
@@ -710,13 +776,14 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             FontWeight = FontWeights.SemiBold,
         });
         content.Children.Add(value);
-        content.Children.Add(new TextBlock
+        detailText = new TextBlock
         {
             Text = detail,
             Foreground = new SolidColorBrush(TextSecondary),
             FontSize = 10,
             Margin = new Thickness(0, 3, 0, 0),
-        });
+        };
+        content.Children.Add(detailText);
         var card = new Grid();
         card.Children.Add(new Border
         {
@@ -734,11 +801,24 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         };
         card.Children.Add(accentBar);
         card.Children.Add(content);
-        card.Children.Add(CreateSparkline(accent));
+        sparkline = CreateSparkline(accent, Array.Empty<double>());
+        card.Children.Add(sparkline);
         var wrapper = new Border
         {
             Margin = new Thickness(column == 0 ? 0 : 5, 0, column == 4 ? 0 : 5, 0),
             Child = card,
+            Cursor = Cursors.Hand,
+        };
+        wrapper.MouseLeftButtonUp += (_, _) =>
+        {
+            var window = new TelemetryGraphWindow(graphTitle, GetPeriodSummary(selectedDays), () => snapshots.ToArray(), graphTitle switch
+            {
+                "Total tokens" => snapshot => snapshot.TotalTokens,
+                "Requests" => snapshot => snapshot.Requests,
+                _ => snapshot => snapshot.ActiveUsers,
+            });
+            window.Show();
+            window.Activate();
         };
         Grid.SetColumn(wrapper, column);
         Grid.SetRow(wrapper, row);
@@ -746,7 +826,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         return wrapper;
     }
 
-    private static Canvas CreateSparkline(Color accent)
+    private static Canvas CreateSparkline(Color accent, IReadOnlyList<double> values)
     {
         var canvas = new Canvas
         {
@@ -757,26 +837,37 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             Margin = new Thickness(0, 0, 14, 14),
             IsHitTestVisible = false,
         };
-        canvas.Children.Add(new Polyline
+        var line = new Polyline
         {
             Stroke = new SolidColorBrush(accent),
             StrokeThickness = 1.25,
             Opacity = 0.9,
-            Points = new PointCollection
-            {
-                new Point(0, 25), new Point(8, 20), new Point(13, 22), new Point(21, 12),
-                new Point(27, 17), new Point(35, 8), new Point(42, 18), new Point(49, 13),
-                new Point(57, 23), new Point(65, 10), new Point(76, 5),
-            },
-        });
-        canvas.Children.Add(new Ellipse
+            Points = CreateSparklinePoints(values),
+        };
+        canvas.Children.Add(line);
+        if (values.Count > 0)
         {
-            Width = 5,
-            Height = 5,
-            Fill = new SolidColorBrush(accent),
-            Margin = new Thickness(73, 2, 0, 0),
-        });
+            var last = line.Points[^1];
+            canvas.Children.Add(new Ellipse
+            {
+                Width = 5,
+                Height = 5,
+                Fill = new SolidColorBrush(accent),
+                Margin = new Thickness(last.X - 2.5, last.Y - 2.5, 0, 0),
+            });
+        }
         return canvas;
+    }
+
+    private static PointCollection CreateSparklinePoints(IReadOnlyList<double> values)
+    {
+        if (values.Count == 0) return new PointCollection();
+        var min = values.Min();
+        var max = values.Max();
+        var range = Math.Max(1, max - min);
+        return new PointCollection(values.Select((value, index) => new Point(
+            values.Count == 1 ? 76 : index * 76d / (values.Count - 1),
+            29 - (value - min) / range * 24)).ToArray());
     }
 
     private static TextBlock CreateEmptyState()
@@ -790,6 +881,45 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             TextAlignment = TextAlignment.Center,
             Margin = new Thickness(20, 42, 20, 42),
         };
+    }
+
+    private void RecordSnapshot()
+    {
+        var snapshot = new TelemetrySnapshot(DateTimeOffset.UtcNow, latestTotalTokens, latestRequests, latestActiveUsers);
+        if (snapshots.Count > 0 && (snapshot.CapturedAtUtc - snapshots[^1].CapturedAtUtc).TotalSeconds < 1)
+            snapshots[^1] = snapshot;
+        else
+            snapshots.Add(snapshot);
+        if (snapshots.Count > 90) snapshots.RemoveAt(0);
+    }
+
+    private void UpdateSparklines()
+    {
+        UpdateSparkline(totalTokensSparkline, snapshots.Select(snapshot => (double)snapshot.TotalTokens), TextSecondary);
+        UpdateSparkline(requestsSparkline, snapshots.Select(snapshot => (double)snapshot.Requests), TextSecondary);
+        UpdateSparkline(activeSparkline, snapshots.Select(snapshot => (double)snapshot.ActiveUsers), Success);
+    }
+
+    private static void UpdateSparkline(Canvas canvas, IEnumerable<double> values, Color accent)
+    {
+        var points = CreateSparklinePoints(values.ToArray());
+        canvas.Children.Clear();
+        canvas.Children.Add(new Polyline
+        {
+            Stroke = new SolidColorBrush(accent),
+            StrokeThickness = 1.25,
+            Opacity = 0.9,
+            Points = points,
+        });
+        if (points.Count == 0) return;
+        var last = points[^1];
+        canvas.Children.Add(new Ellipse
+        {
+            Width = 5,
+            Height = 5,
+            Fill = new SolidColorBrush(accent),
+            Margin = new Thickness(last.X - 2.5, last.Y - 2.5, 0, 0),
+        });
     }
 
     private static string FormatPresence(string lastActive) =>

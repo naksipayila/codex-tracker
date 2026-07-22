@@ -344,7 +344,15 @@ internal static class Program
         Equal("Daily", ((Button)periodButtons.Children[0]).Content, "daily telemetry period");
         Equal("7 days", ((Button)periodButtons.Children[1]).Content, "weekly telemetry period");
         Equal("Monthly", ((Button)periodButtons.Children[2]).Content, "monthly telemetry period");
+        foreach (Button button in periodButtons.Children)
+            Equal(false, button.Style == null, "telemetry period button custom style");
         var summary = (Grid)dashboard.Children[1];
+        var totalTokensDetail = (TextBlock)((StackPanel)((Grid)((Border)summary.Children[0]).Child).Children[2]).Children[2];
+        Equal("Last 7 days", totalTokensDetail.Text, "weekly summary period label");
+        ((Button)periodButtons.Children[0]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Equal("Today", totalTokensDetail.Text, "daily summary period label");
+        ((Button)periodButtons.Children[2]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+        Equal("Last 30 days", totalTokensDetail.Text, "monthly summary period label");
         Equal(4, summary.ColumnDefinitions.Count, "telemetry summary column count");
         Equal(1, summary.RowDefinitions.Count, "telemetry summary row count");
         Equal(3, summary.Children.Count, "telemetry summary card children");
