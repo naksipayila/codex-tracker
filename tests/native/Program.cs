@@ -345,14 +345,16 @@ internal static class Program
         Equal("7 days", ((Button)periodButtons.Children[1]).Content, "weekly telemetry period");
         Equal("Monthly", ((Button)periodButtons.Children[2]).Content, "monthly telemetry period");
         var summary = (Grid)dashboard.Children[1];
-        Equal(5, summary.ColumnDefinitions.Count, "telemetry summary column count");
+        Equal(4, summary.ColumnDefinitions.Count, "telemetry summary column count");
         Equal(1, summary.RowDefinitions.Count, "telemetry summary row count");
-        Equal(5, summary.Children.Count, "telemetry summary card children");
+        Equal(3, summary.Children.Count, "telemetry summary card children");
         Equal(0, Grid.GetColumn(summary.Children[0]), "total tokens summary column");
         Equal(1, Grid.GetColumn(summary.Children[1]), "requests summary column");
-        Equal(2, Grid.GetColumn(summary.Children[2]), "active summary column");
-        Equal(3, Grid.GetColumn(summary.Children[3]), "errors summary column");
-        Equal(4, Grid.GetColumn(summary.Children[4]), "latency summary column");
+        Equal(3, Grid.GetColumn(summary.Children[2]), "active summary column");
+        Equal(18d, summary.ColumnDefinitions[2].Width.Value, "summary content gap width");
+        Equal(220d, summary.ColumnDefinitions[3].Width.Value, "active summary card width");
+        Equal(220d, ((Border)summary.Children[2]).Width, "active summary card explicit width");
+        Equal(new Thickness(0), ((Border)summary.Children[2]).Margin, "active summary card margin");
 
         var content = (Grid)dashboard.Children[2];
         Equal(3, content.ColumnDefinitions.Count, "telemetry content column count");
@@ -365,9 +367,14 @@ internal static class Program
         Equal(2, ((Grid)table.Child).RowDefinitions.Count, "telemetry table structure");
         var header = (Grid)((Grid)table.Child).Children[0];
         Equal("TEAM MEMBER", ((TextBlock)header.Children[0]).Text, "telemetry table header");
+        Equal(8, header.Children.Count, "telemetry table column count without errors or latency");
+        Equal("LAST ACTIVE", ((TextBlock)header.Children[7]).Text, "telemetry last active header");
+        Equal(TextAlignment.Right, ((TextBlock)header.Children[7]).TextAlignment, "telemetry last active header alignment");
+        Equal(true, header.ColumnDefinitions[7].Width.IsStar, "last active fills table width");
         var online = (Border)content.Children[1];
         Equal(2, Grid.GetRowSpan(online), "online panel row span");
         Equal(220d, online.MinWidth, "online panel empty-state minimum width");
+        Equal(220d, online.Width, "online panel explicit width");
         var onlineContent = (Grid)online.Child;
         Equal(2, onlineContent.Children.Count, "online panel content children without helper text");
         Equal(2, onlineContent.RowDefinitions.Count, "online panel rows without helper text");

@@ -15,7 +15,8 @@ namespace CodexUsageTray;
 
 internal sealed class TelemetryPanel : UserControl, IDisposable
 {
-    private static readonly double[] ColumnWidths = { 205, 78, 82, 82, 92, 86, 62, 62, 78, 96 };
+    private const double OnlinePanelWidth = 220;
+    private static readonly double[] ColumnWidths = { 205, 78, 82, 82, 92, 86, 62, 96 };
 
     private static Color BgCanvas => Theme.Background;
     private static Color BgSurface => Theme.Surface;
@@ -27,8 +28,6 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
     private static Color TextPrimary => Theme.TextPrimary;
     private static Color Accent => Theme.Accent;
     private static Color Success => Theme.Success;
-    private static Color Error => Theme.Error;
-    private static Color Warning => Theme.Warning;
     private static Color RowHover => Color.FromRgb(0x2e, 0x2e, 0x2e);
     private static Color ScrollThumb => Theme.ScrollThumb;
 
@@ -39,11 +38,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
     private readonly TextBlock totalTokensValue;
     private readonly TextBlock requestsValue;
     private readonly TextBlock activeValue;
-    private readonly TextBlock errorsValue;
-    private readonly TextBlock latencyValue;
     private readonly StackPanel onlineCards;
-    private readonly Border errorsAccent;
-    private readonly Border latencyAccent;
     private readonly List<Button> periodButtons = new();
     private IReadOnlyList<TelemetryPerson> currentUsers = Array.Empty<TelemetryPerson>();
     private IReadOnlySet<string> activeUserIds = new HashSet<string>(StringComparer.Ordinal);
@@ -76,8 +71,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         Grid.SetRow(periodSelector, 0);
         dashboard.Children.Add(periodSelector);
 
-        var summary = CreateSummary(out totalTokensValue, out requestsValue, out activeValue, out errorsValue,
-            out latencyValue, out errorsAccent, out latencyAccent);
+        var summary = CreateSummary(out totalTokensValue, out requestsValue, out activeValue);
         Grid.SetRow(summary, 2);
         dashboard.Children.Add(summary);
 
@@ -196,32 +190,31 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         }
     }
 
-    private Grid CreateSummary(out TextBlock totalTokensValue, out TextBlock requestsValue, out TextBlock activeValue,
-        out TextBlock errorsValue, out TextBlock latencyValue, out Border errorsAccent, out Border latencyAccent)
+    private Grid CreateSummary(out TextBlock totalTokensValue, out TextBlock requestsValue, out TextBlock activeValue)
     {
         var summary = new Grid { Margin = new Thickness(0, 0, 0, 18) };
         summary.ColumnDefinitions.Add(new ColumnDefinition());
         summary.ColumnDefinitions.Add(new ColumnDefinition());
-        summary.ColumnDefinitions.Add(new ColumnDefinition());
-        summary.ColumnDefinitions.Add(new ColumnDefinition());
-        summary.ColumnDefinitions.Add(new ColumnDefinition());
+        summary.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });
+        summary.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(OnlinePanelWidth) });
         summary.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         var totalTokens = CreateMetricValue("0");
         var requests = CreateMetricValue("0");
         var active = CreateMetricValue("0");
-        var errors = CreateMetricValue("0");
-        var latency = CreateMetricValue("--");
-        summary.Children.Add(CreateSummaryCard(0, 0, "TOTAL TOKENS", totalTokens, "Across this period", TextSecondary, out _));
-        summary.Children.Add(CreateSummaryCard(1, 0, "REQUESTS", requests, "All team members", TextSecondary, out _));
-        summary.Children.Add(CreateSummaryCard(2, 0, "ACTIVE NOW", active, "Currently online", Success, out _));
-        summary.Children.Add(CreateSummaryCard(3, 0, "ERRORS", errors, "Needs attention", TextMuted, out errorsAccent));
-        summary.Children.Add(CreateSummaryCard(4, 0, "AVG LATENCY", latency, "Across active users", Warning, out latencyAccent));
+        var totalTokensCard = CreateSummaryCard(0, 0, "TOTAL TOKENS", totalTokens, "Across this period", TextSecondary, out _);
+        totalTokensCard.Margin = new Thickness(0, 0, 9, 0);
+        summary.Children.Add(totalTokensCard);
+        var requestsCard = CreateSummaryCard(1, 0, "REQUESTS", requests, "All team members", TextSecondary, out _);
+        requestsCard.Margin = new Thickness(9, 0, 0, 0);
+        summary.Children.Add(requestsCard);
+        var activeCard = CreateSummaryCard(3, 0, "ACTIVE NOW", active, "Currently online", Success, out _);
+        activeCard.Width = OnlinePanelWidth;
+        activeCard.Margin = new Thickness(0);
+        summary.Children.Add(activeCard);
         totalTokensValue = totalTokens;
         requestsValue = requests;
         activeValue = active;
-        errorsValue = errors;
-        latencyValue = latency;
         return summary;
     }
 
@@ -271,7 +264,8 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             BorderBrush = new SolidColorBrush(BgBorder),
             BorderThickness = new Thickness(1),
             CornerRadius = new CornerRadius(10),
-            MinWidth = 220,
+            MinWidth = OnlinePanelWidth,
+            Width = OnlinePanelWidth,
             Child = content,
         };
     }
@@ -344,16 +338,8 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         currentUsers = ordered;
         var totalTokens = ordered.Sum(user => user.TotalTokens);
         var totalRequests = ordered.Sum(user => user.Requests);
-        var totalErrors = ordered.Sum(user => user.Errors);
-        var latencyUsers = ordered.Where(user => user.AverageLatencyMs > 0).ToArray();
         totalTokensValue.Text = FormatTokens(totalTokens);
         requestsValue.Text = totalRequests.ToString("N0", CultureInfo.InvariantCulture);
-        errorsValue.Text = totalErrors.ToString("N0", CultureInfo.InvariantCulture);
-        errorsValue.Foreground = new SolidColorBrush(totalErrors > 0 ? Error : TextPrimary);
-        latencyValue.Text = latencyUsers.Length == 0 ? "--" : FormatLatency(latencyUsers.Average(user => user.AverageLatencyMs));
-        latencyValue.Foreground = new SolidColorBrush(latencyUsers.Any(user => user.AverageLatencyMs >= 15000) ? Warning : TextPrimary);
-        errorsAccent.Background = new SolidColorBrush(totalErrors > 0 ? Error : TextMuted);
-        latencyAccent.Background = new SolidColorBrush(latencyUsers.Any(user => user.AverageLatencyMs >= 15000) ? Warning : TextMuted);
 
         RenderRows();
     }
@@ -467,7 +453,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
 
     private static Grid CreateHeader()
     {
-        return CreateGrid(new[] { "TEAM MEMBER", "REQUESTS", "INPUT", "OUTPUT", "REASONING", "TOTAL", "MODELS", "ERRORS", "LATENCY", "LAST ACTIVE" }, true);
+        return CreateGrid(new[] { "TEAM MEMBER", "REQUESTS", "INPUT", "OUTPUT", "REASONING", "TOTAL", "MODELS", "LAST ACTIVE" }, true);
     }
 
     private static Grid CreateGrid(string[] values, bool header)
@@ -535,11 +521,8 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         AddCell(row, FormatTokens(user.ReasoningTokens), 4);
         AddCell(row, FormatTokens(user.TotalTokens), 5, true, Accent);
         AddCell(row, user.Models.ToString("N0", CultureInfo.InvariantCulture), 6);
-        AddCell(row, user.Errors.ToString("N0", CultureInfo.InvariantCulture), 7, false, user.Errors > 0 ? Error : TextSecondary);
-        AddCell(row, user.AverageLatencyMs > 0 ? FormatLatency(user.AverageLatencyMs) : "--", 8, false,
-            user.AverageLatencyMs >= 15000 ? Warning : TextSecondary);
-        AddCell(row, online ? "Active now" : user.LastActive, 9, false,
-            online ? Success : TextSecondary, TextAlignment.Left);
+        AddCell(row, online ? "Active now" : user.LastActive, 7, false,
+            online ? Success : TextSecondary, TextAlignment.Right);
         row.MouseEnter += (_, _) => row.Background = new SolidColorBrush(RowHover);
         row.MouseLeave += (_, _) => row.Background = new SolidColorBrush(baseColor);
         var container = new Border
@@ -664,8 +647,13 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
 
     private static void AddColumns(Grid grid)
     {
-        foreach (var width in ColumnWidths)
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(width) });
+        for (var index = 0; index < ColumnWidths.Length; index++)
+        {
+            var width = index == ColumnWidths.Length - 1
+                ? new GridLength(1, GridUnitType.Star)
+                : new GridLength(ColumnWidths[index]);
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = width });
+        }
     }
 
     private static void ConfigureScrollViewer(ScrollViewer scroll)
@@ -806,9 +794,6 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
 
     private static string FormatPresence(string lastActive) =>
         string.IsNullOrWhiteSpace(lastActive) || lastActive == "--" ? "No recent activity" : $"Last active {lastActive}";
-
-    private static string FormatLatency(double milliseconds) =>
-        $"{milliseconds / 1000:0.0}s";
 
     private static string FormatElapsed(long milliseconds)
     {
