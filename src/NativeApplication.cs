@@ -813,11 +813,11 @@ internal sealed class SettingsPanelWindow : Window
         var updateInfo = new StackPanel
         {
             Orientation = Orientation.Horizontal,
-            HorizontalAlignment = HorizontalAlignment.Right,
+            HorizontalAlignment = HorizontalAlignment.Center,
             Margin = new Thickness(0, 0, 0, 12),
         };
         updateInfo.Children.Add(CreateTextAction("Check for updates", checkUpdate));
-        updateInfo.Children.Add(new TextBlock
+        var versionText = new TextBlock
         {
             Text = "Version: " + currentVersion,
             Foreground = Theme.TextMutedBrush,
@@ -825,8 +825,8 @@ internal sealed class SettingsPanelWindow : Window
             FontSize = Theme.FontSizeSmall,
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(10, 0, 0, 0),
-        });
-        body.Children.Add(updateInfo);
+        };
+        updateInfo.Children.Add(versionText);
         body.Children.Add(CreateSectionLabel("Quick actions"));
         var quickActions = new StackPanel();
         quickActions.Children.Add(CreateButton(widgetVisible ? "Hide widget" : "Show widget", toggleWidget));
@@ -844,6 +844,9 @@ internal sealed class SettingsPanelWindow : Window
         prefs.Children.Add(CreateToggle("Show 6H usage", showFiveHour, setShowFiveHour));
         prefs.Children.Add(CreateToggle("Show weekly usage", showWeekly, setShowWeekly));
         body.Children.Add(CreateCard(prefs));
+
+        updateInfo.Margin = new Thickness(0, 12, 0, 0);
+        body.Children.Add(updateInfo);
 
         static Border CreateCard(StackPanel content)
         {

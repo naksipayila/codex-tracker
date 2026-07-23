@@ -210,7 +210,7 @@ internal static class Program
         var root = (Border)panel.Content;
         Equal(12d, root.CornerRadius.TopLeft, "settings panel corner radius");
         Equal(Color.FromRgb(0x14, 0x14, 0x14), ((SolidColorBrush)root.Background).Color, "settings panel dark gray background");
-        Equal("QUICK ACTIONS", ((TextBlock)body.Children[1]).Text, "settings first section label");
+        Equal("QUICK ACTIONS", ((TextBlock)body.Children[0]).Text, "settings first section label");
         Equal("QUICK ACTIONS|PREFERENCES",
             string.Join("|", body.Children.OfType<TextBlock>()
                 .Where(text => text.Text == text.Text.ToUpperInvariant())
@@ -345,12 +345,11 @@ internal static class Program
         Equal(1, root.Children.Count, "telemetry shell child count");
         Equal(1120d, panel.MinWidth, "telemetry dashboard minimum width");
         var dashboard = (Grid)root.Children[0];
-        Equal(5, dashboard.RowDefinitions.Count, "telemetry dashboard row count");
-        var periodSelector = (Grid)dashboard.Children[0];
-        var periodTitle = (TextBlock)periodSelector.Children[0];
-        Equal("Segoe UI", periodTitle.FontFamily.Source, "telemetry title font family");
-        Equal(FontWeights.SemiBold, periodTitle.FontWeight, "telemetry title font weight");
-        var periodButtons = (StackPanel)periodSelector.Children[1];
+        Equal(3, dashboard.RowDefinitions.Count, "telemetry dashboard row count");
+        var summary = (Grid)dashboard.Children[0];
+        var periodControl = (Border)summary.Children[2];
+        Equal(9d, periodControl.CornerRadius.TopLeft, "telemetry period control corner radius");
+        var periodButtons = (StackPanel)periodControl.Child;
         Equal(3, periodButtons.Children.Count, "telemetry period button count");
         Equal("Daily", ((Button)periodButtons.Children[0]).Content, "daily telemetry period");
         Equal("7 days", ((Button)periodButtons.Children[1]).Content, "weekly telemetry period");
@@ -361,7 +360,6 @@ internal static class Program
             Equal("Segoe UI", button.FontFamily.Source, "telemetry period button font family");
             Equal(FontWeights.Medium, button.FontWeight, "telemetry period button font weight");
         }
-        var summary = (Grid)dashboard.Children[1];
         var summaryContent = (StackPanel)((Grid)((Border)summary.Children[0]).Child).Children[2];
         var summaryLabel = (TextBlock)summaryContent.Children[0];
         var summaryValue = (TextBlock)summaryContent.Children[1];
@@ -378,17 +376,16 @@ internal static class Program
         ((Button)periodButtons.Children[2]).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
         Equal("Last 30 days", totalTokensDetail.Text, "monthly summary period label");
         Equal(4, summary.ColumnDefinitions.Count, "telemetry summary column count");
-        Equal(1, summary.RowDefinitions.Count, "telemetry summary row count");
-        Equal(3, summary.Children.Count, "telemetry summary card children");
+        Equal(0, summary.RowDefinitions.Count, "telemetry summary row count");
+        Equal(3, summary.Children.Count, "telemetry summary children");
         Equal(0, Grid.GetColumn(summary.Children[0]), "total tokens summary column");
         Equal(1, Grid.GetColumn(summary.Children[1]), "requests summary column");
-        Equal(3, Grid.GetColumn(summary.Children[2]), "active summary column");
-        Equal(18d, summary.ColumnDefinitions[2].Width.Value, "summary content gap width");
-        Equal(220d, summary.ColumnDefinitions[3].Width.Value, "active summary card width");
-        Equal(220d, ((Border)summary.Children[2]).Width, "active summary card explicit width");
-        Equal(new Thickness(0), ((Border)summary.Children[2]).Margin, "active summary card margin");
+        Equal(3, Grid.GetColumn(summary.Children[2]), "period buttons column");
+        Equal(12d, summary.ColumnDefinitions[2].Width.Value, "summary content gap width");
+        Equal(220d, summary.ColumnDefinitions[3].Width.Value, "period buttons column width");
+        Equal(62d, ((Button)periodButtons.Children[0]).Width, "period button width");
 
-        var content = (Grid)dashboard.Children[2];
+        var content = (Grid)dashboard.Children[1];
         Equal(3, content.ColumnDefinitions.Count, "telemetry content column count");
         if (!content.ColumnDefinitions[0].Width.IsStar || !content.ColumnDefinitions[2].Width.IsAuto)
             throw new InvalidOperationException("telemetry online panel must size to content");

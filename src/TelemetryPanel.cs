@@ -52,11 +52,9 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
     private readonly StackPanel rows;
     private readonly TextBlock totalTokensValue;
     private readonly TextBlock requestsValue;
-    private readonly TextBlock activeValue;
     private readonly TextBlock periodSummaryDetail;
     private readonly Canvas totalTokensSparkline;
     private readonly Canvas requestsSparkline;
-    private readonly Canvas activeSparkline;
     private readonly StackPanel onlineCards;
     private readonly List<Button> periodButtons = new();
     private IReadOnlyList<TelemetryPerson> currentUsers = Array.Empty<TelemetryPerson>();
@@ -83,25 +81,19 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         var root = new Grid();
         root.ColumnDefinitions.Add(new ColumnDefinition());
 
-        var dashboard = new Grid { Margin = new Thickness(24, 24, 24, 24) };
+        var dashboard = new Grid { Margin = new Thickness(16) };
         dashboard.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        dashboard.RowDefinitions.Add(new RowDefinition { Height = new GridLength(18) });
-        dashboard.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        dashboard.RowDefinitions.Add(new RowDefinition { Height = new GridLength(18) });
+        dashboard.RowDefinitions.Add(new RowDefinition { Height = new GridLength(12) });
         dashboard.RowDefinitions.Add(new RowDefinition());
 
-        var periodSelector = CreatePeriodSelector();
-        Grid.SetRow(periodSelector, 0);
-        dashboard.Children.Add(periodSelector);
-
-        var summary = CreateSummary(out totalTokensValue, out requestsValue, out activeValue,
-            out periodSummaryDetail, out totalTokensSparkline, out requestsSparkline, out activeSparkline);
-        Grid.SetRow(summary, 2);
+        var summary = CreateSummary(out totalTokensValue, out requestsValue,
+            out periodSummaryDetail, out totalTokensSparkline, out requestsSparkline);
+        Grid.SetRow(summary, 0);
         dashboard.Children.Add(summary);
 
         var contentArea = new Grid { Margin = new Thickness(0, 0, 0, 0) };
         contentArea.ColumnDefinitions.Add(new ColumnDefinition());
-        contentArea.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });
+        contentArea.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
         contentArea.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         var leftContent = new Grid();
         leftContent.RowDefinitions.Add(new RowDefinition());
@@ -140,7 +132,7 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         Grid.SetColumn(online, 2);
         Grid.SetRowSpan(online, 2);
         contentArea.Children.Add(online);
-        Grid.SetRow(contentArea, 4);
+        Grid.SetRow(contentArea, 2);
         dashboard.Children.Add(contentArea);
         root.Children.Add(dashboard);
         Content = root;
@@ -155,41 +147,16 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
 
     }
 
-    private Grid CreatePeriodSelector()
-    {
-        var selector = new Grid();
-        selector.ColumnDefinitions.Add(new ColumnDefinition());
-        selector.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-        selector.Children.Add(new TextBlock
-        {
-            Text = "TELEMETRY",
-            FontFamily = UiFont,
-            Foreground = new SolidColorBrush(TextPrimary),
-            FontSize = 16,
-            FontWeight = FontWeights.SemiBold,
-            VerticalAlignment = VerticalAlignment.Center,
-        });
-
-        var buttons = new StackPanel { Orientation = Orientation.Horizontal };
-        AddPeriodButton(buttons, "Daily", 1);
-        AddPeriodButton(buttons, "7 days", 7);
-        AddPeriodButton(buttons, "Monthly", 30);
-        Grid.SetColumn(buttons, 1);
-        selector.Children.Add(buttons);
-        UpdatePeriodButtonStyles();
-        return selector;
-    }
-
     private void AddPeriodButton(Panel parent, string label, int days)
     {
         var button = new Button
         {
             Content = label,
             Tag = days,
-            Width = 78,
+            Width = 62,
             Height = 30,
-            Margin = new Thickness(5, 0, 0, 0),
-            Padding = new Thickness(8, 0, 8, 0),
+            Margin = new Thickness(2, 0, 2, 0),
+            Padding = new Thickness(4, 0, 4, 0),
             FontFamily = UiFont,
             FontSize = 11,
             FontWeight = FontWeights.Medium,
@@ -254,37 +221,58 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
         return style;
     }
 
-    private Grid CreateSummary(out TextBlock totalTokensValue, out TextBlock requestsValue, out TextBlock activeValue,
-        out TextBlock periodSummaryDetail, out Canvas totalTokensSparkline, out Canvas requestsSparkline,
-        out Canvas activeSparkline)
+    private Grid CreateSummary(out TextBlock totalTokensValue, out TextBlock requestsValue,
+        out TextBlock periodSummaryDetail, out Canvas totalTokensSparkline, out Canvas requestsSparkline)
     {
-        var summary = new Grid { Margin = new Thickness(0, 0, 0, 18) };
+        var summary = new Grid();
         summary.ColumnDefinitions.Add(new ColumnDefinition());
         summary.ColumnDefinitions.Add(new ColumnDefinition());
-        summary.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(18) });
+        summary.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(12) });
         summary.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(OnlinePanelWidth) });
-        summary.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         var totalTokens = CreateMetricValue("0");
         var requests = CreateMetricValue("0");
-        var active = CreateMetricValue("0");
         var totalTokensCard = CreateSummaryCard(0, 0, "TOTAL TOKENS", totalTokens, GetPeriodSummary(selectedDays), TextSecondary,
             "Total tokens", out _, out totalTokensSparkline, out periodSummaryDetail);
-        totalTokensCard.Margin = new Thickness(0, 0, 9, 0);
+        totalTokensCard.Margin = new Thickness(0, 0, 6, 0);
         summary.Children.Add(totalTokensCard);
         var requestsCard = CreateSummaryCard(1, 0, "REQUESTS", requests, "All team members", TextSecondary,
             "Requests", out _, out requestsSparkline, out _);
-        requestsCard.Margin = new Thickness(9, 0, 0, 0);
+        requestsCard.Margin = new Thickness(6, 0, 0, 0);
         summary.Children.Add(requestsCard);
-        var activeCard = CreateSummaryCard(3, 0, "ACTIVE NOW", active, "Currently online", Success,
-            "Active users", out _, out activeSparkline, out _);
-        activeCard.Width = OnlinePanelWidth;
-        activeCard.Margin = new Thickness(0);
-        summary.Children.Add(activeCard);
+
+        var periodControl = CreatePeriodControl();
+        Grid.SetColumn(periodControl, 3);
+        summary.Children.Add(periodControl);
+
         totalTokensValue = totalTokens;
         requestsValue = requests;
-        activeValue = active;
         return summary;
+    }
+
+    private Border CreatePeriodControl()
+    {
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        AddPeriodButton(buttons, "Daily", 1);
+        AddPeriodButton(buttons, "7 days", 7);
+        AddPeriodButton(buttons, "Monthly", 30);
+        UpdatePeriodButtonStyles();
+
+        return new Border
+        {
+            Background = new SolidColorBrush(BgSurface),
+            BorderBrush = new SolidColorBrush(BgBorder),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(9),
+            MinHeight = 86,
+            Padding = new Thickness(6),
+            Child = buttons,
+        };
     }
 
     private static string GetPeriodSummary(int days) => days switch
@@ -432,7 +420,6 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
             .Where(user => !string.IsNullOrWhiteSpace(user.UserId))
             .Select(user => user.UserId)
             .ToHashSet(StringComparer.Ordinal);
-        activeValue.Text = users.Count.ToString(CultureInfo.InvariantCulture);
         latestActiveUsers = users.Count;
         RecordSnapshot();
         UpdateSparklines();
@@ -935,7 +922,6 @@ internal sealed class TelemetryPanel : UserControl, IDisposable
     {
         UpdateSparkline(totalTokensSparkline, snapshots.Select(snapshot => (double)snapshot.TotalTokens), TextSecondary);
         UpdateSparkline(requestsSparkline, snapshots.Select(snapshot => (double)snapshot.Requests), TextSecondary);
-        UpdateSparkline(activeSparkline, snapshots.Select(snapshot => (double)snapshot.ActiveUsers), Success);
     }
 
     private static void UpdateSparkline(Canvas canvas, IEnumerable<double> values, Color accent)
